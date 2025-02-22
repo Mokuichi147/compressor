@@ -20,6 +20,11 @@ pub fn get_files(dir: &str) -> Vec<PathBuf> {
     files
 }
 
+/// 絶対パスを取得する
+pub fn get_absolute_path(dir: &PathBuf) -> PathBuf {
+    fs::canonicalize(dir).unwrap()
+}
+
 /// 絶対パス2つから相対パスを取得する
 pub fn get_relative_path(from: &PathBuf, to: &PathBuf) -> PathBuf {
     to.strip_prefix(from).ok().map(|p| p.to_path_buf()).unwrap()
