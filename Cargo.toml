@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.30", features = ["derive"] }
+image = "0.25.5"
+mozjpeg = "0.10.13"
