@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use clap::Parser;
 mod file;
 mod image;
+mod video;
 
 #[derive(Parser)]
 struct AppArgs {
@@ -47,6 +48,10 @@ fn main() {
                 if ext == "jpg" || ext == "jpeg" || ext == "png" {
                     println!("image: {:?}", filepath);
                     image::path2compress(&filepath.to_str().unwrap(), output_path, args.quality);
+                }
+                else if video::is_match_extension(filepath.to_str().unwrap()) {
+                    println!("video: {:?}", filepath);
+                    video::path2compress(&filepath.to_str().unwrap(), output_path);
                 }
             },
             None => continue,
