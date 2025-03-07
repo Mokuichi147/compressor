@@ -2,9 +2,9 @@
 指定したフォルダ内に存在するファイルを圧縮し、別のフォルダに保存します。
 
 ## サポートするファイル形式
-- [x] jpg,jpeg
+- [x] jpg, jpeg
 - [x] png
-- [x] mov,mp4,avi,mkv,webm
+- [x] mov, mp4, avi, mkv, webm
 - [ ] gif
 
 ## 使い方
