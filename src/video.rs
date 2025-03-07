@@ -30,7 +30,7 @@ pub fn is_match_extension(input_path: &str) -> bool {
         return false;
     }
 
-    let video_extensions = [".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv", ".webm"];
+    let video_extensions = [".mov", ".mp4", ".avi", ".mkv", ".webm"];
     let extension = path.extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| format!(".{}", ext.to_lowercase()));
