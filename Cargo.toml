@@ -7,3 +7,4 @@ edition = "2021"
 clap = { version = "4.5.30", features = ["derive"] }
 image = "0.25.5"
 mozjpeg = "0.10.13"
+oxipng = "9.1.4"

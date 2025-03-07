@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 use clap::Parser;
 mod file;
-mod image;
+mod rgb_image;
+mod rgba_image;
 mod video;
 
 #[derive(Parser)]
@@ -45,11 +46,13 @@ fn main() {
         match extension {
             Some(ext) => {
                 let ext = ext.to_string_lossy().to_lowercase();
-                if ext == "jpg" || ext == "jpeg" || ext == "png" {
-                    println!("image: {:?}", filepath);
-                    image::path2compress(&filepath.to_str().unwrap(), output_path, args.quality);
-                }
-                else if video::is_match_extension(filepath.to_str().unwrap()) {
+                if ext == "png" {
+                    println!("rgba image: {:?}", filepath);
+                    rgba_image::path2compress(&filepath.to_str().unwrap(), output_path);
+                } else if ext == "jpg" || ext == "jpeg" {
+                    println!("rgb image: {:?}", filepath);
+                    rgb_image::path2compress(&filepath.to_str().unwrap(), output_path, args.quality);
+                } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     println!("video: {:?}", filepath);
                     video::path2compress(&filepath.to_str().unwrap(), output_path);
                 }
