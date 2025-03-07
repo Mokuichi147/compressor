@@ -4,6 +4,7 @@ use std::fs;
 use std::time::Instant;
 
 /// 動画圧縮の結果統計情報
+#[allow(dead_code)]
 pub struct CompressionStats {
     /// 元のファイルサイズ（バイト）
     pub original_size: u64,

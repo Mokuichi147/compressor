@@ -12,6 +12,7 @@ pub fn path2compress(path: &str, output_path: &str) {
     let _ = optimize(&InFile::from(PathBuf::from(path)), &OutFile::from_path(PathBuf::from(output_path)), &options);
 }
 
+#[allow(dead_code)]
 pub fn data2compress(data: &Vec<u8>, output_path: &str) {
     let img = image::load_from_memory(data).unwrap();
 
@@ -21,7 +22,7 @@ pub fn data2compress(data: &Vec<u8>, output_path: &str) {
     compress(&img, output_path);
 }
 
-
+#[allow(dead_code)]
 pub fn compress(img: &DynamicImage, output_path: &str) {
     let rgba_img = img.to_rgba8().into_raw();
 

@@ -12,6 +12,7 @@ pub fn path2compress(path: &str, output_path: &str, quality: f32) {
     compress(&img, output_path, quality);
 }
 
+#[allow(dead_code)]
 pub fn data2compress(data: &Vec<u8>, output_path: &str, quality: f32) {
     // 画像を読み込む
     let img = image::load_from_memory(data).unwrap();
