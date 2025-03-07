@@ -19,3 +19,6 @@ Options:
   -q, --quality <QUALITY>           [default: 70.0]
   -h, --help                        Print help
 ```
+
+## ライセンス
+Dual-licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).
