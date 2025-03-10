@@ -48,9 +48,11 @@ fn main() {
                 let ext = ext.to_string_lossy().to_lowercase();
                 if ext == "png" {
                     println!("rgba image: {:?}", filepath);
+                    output_path.set_extension("png");
                     rgba_image::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap());
                 } else if ext == "jpg" || ext == "jpeg" {
                     println!("rgb image: {:?}", filepath);
+                    output_path.set_extension("jpg");
                     rgb_image::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap(), args.quality);
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     println!("video: {:?}", filepath);
