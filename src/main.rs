@@ -31,7 +31,6 @@ fn main() {
     for input_file in input_files.iter() {
         let filepath = input_file.to_str().unwrap();
         let extension = input_file.extension();
-        //let basename = input_file.file_stem();
 
         if filepath.starts_with(&args.output_dir) {
             continue;
@@ -41,20 +40,20 @@ fn main() {
         let relative_path = file::get_relative_path(&root_dir, &input_file);
         let mut output_path = PathBuf::from(args.output_dir.clone());
         output_path.push(relative_path);
-        let output_path = output_path.to_str().unwrap();
 
         match extension {
             Some(ext) => {
                 let ext = ext.to_string_lossy().to_lowercase();
                 if ext == "png" {
                     println!("rgba image: {:?}", filepath);
-                    rgba_image::path2compress(&filepath.to_str().unwrap(), output_path);
+                    rgba_image::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap());
                 } else if ext == "jpg" || ext == "jpeg" {
                     println!("rgb image: {:?}", filepath);
-                    rgb_image::path2compress(&filepath.to_str().unwrap(), output_path, args.quality);
+                    rgb_image::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap(), args.quality);
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     println!("video: {:?}", filepath);
-                    video::path2compress(&filepath.to_str().unwrap(), output_path);
+                    output_path.set_extension("mp4");
+                    video::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap());
                 }
             },
             None => continue,

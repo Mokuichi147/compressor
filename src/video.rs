@@ -17,9 +17,8 @@ pub struct CompressionStats {
 }
 
 pub fn path2compress(input_path: &str, output_path: &str) {
-    let crf = "23";
-    let preset = "";
-    let _ = compress_video(input_path, output_path, crf, preset).unwrap();
+    let crf = "35";
+    let _ = compress_video(input_path, output_path, crf).unwrap();
 }
 
 pub fn is_match_extension(input_path: &str) -> bool {
@@ -48,7 +47,6 @@ pub fn is_match_extension(input_path: &str) -> bool {
 /// * `input_path` - 入力元の動画ファイルパス
 /// * `output_path` - 圧縮後の出力先ファイルパス
 /// * `crf` - Constant Rate Factor (0-51, 低いほど高画質)
-/// * `preset` - エンコード速度プリセット (ultrafast, ..., veryslow)
 ///
 /// # 戻り値
 ///
@@ -60,8 +58,7 @@ pub fn is_match_extension(input_path: &str) -> bool {
 /// let result = compress_video(
 ///     Path::new("/path/to/input.mp4"),
 ///     Path::new("/path/to/output.mp4"),
-///     "23",
-///     "medium"
+///     "23"
 /// );
 /// match result {
 ///     Ok(stats) => println!("圧縮完了: {}% 削減", stats.size_reduction_percent),
@@ -72,7 +69,6 @@ pub fn compress_video(
     input_path: &str,
     output_path: &str,
     crf: &str,
-    preset: &str,
 ) -> Result<CompressionStats, String> {
     // 開始時間を記録
     let start = Instant::now();
@@ -136,15 +132,11 @@ pub fn compress_video(
     command.arg("-i")
         .arg(input_path)
         .arg("-c:v")
-        .arg("libx264")
+        .arg("libsvtav1")
         .arg("-crf")
-        .arg(crf)
-        .arg("-preset")
-        .arg(preset)
-        .arg("-c:a")
-        .arg("aac")
-        .arg("-b:a")
-        .arg("128k");
+        .arg(crf);
+    
+    command.args(&["-c:a", "aac", "-b:a", "128k"]);
     
     // リサイズフィルターを追加（必要な場合）
     if !resize_filter.is_empty() {
