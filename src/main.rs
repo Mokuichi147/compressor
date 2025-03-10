@@ -32,9 +32,11 @@ fn main() {
         let filepath = input_file.to_str().unwrap();
         let extension = input_file.extension();
 
-        if filepath.starts_with(&args.output_dir) {
+        // 圧縮済みのファイルはスキップする
+        if filepath.contains(format!("/{}/", &args.output_dir).as_str()) {
             continue;
         }
+
         let filepath = file::get_absolute_path(input_file);
 
         let relative_path = file::get_relative_path(&root_dir, &input_file);
