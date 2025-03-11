@@ -135,6 +135,8 @@ pub fn compress_video(
     command.args(&["-i", input_path]);
     if cfg!(target_os = "macos") && is_mobile_support {
         command.args(&["-c:v", "hevc_videotoolbox", "-crf", crf, "-tag:v", "hvc1"]);
+    } else if cfg!(target_os = "windows") && is_mobile_support {
+        command.args(&["-c:v", "hevc_nvenc", "-crf", crf, "-tag:v", "hvc1"]);
     } else if is_mobile_support {
         command.args(&["-c:v", "libx265", "-crf", crf, "-tag:v", "hvc1"]);
     } else {
