@@ -18,7 +18,8 @@ pub struct CompressionStats {
 
 pub fn path2compress(input_path: &str, output_path: &str) {
     let crf = "35";
-    let _ = compress_video(input_path, output_path, crf).unwrap();
+    let is_mobile_support = true;
+    let _ = compress_video(input_path, output_path, is_mobile_support, crf).unwrap();
 }
 
 pub fn is_match_extension(input_path: &str) -> bool {
@@ -46,6 +47,7 @@ pub fn is_match_extension(input_path: &str) -> bool {
 ///
 /// * `input_path` - 入力元の動画ファイルパス
 /// * `output_path` - 圧縮後の出力先ファイルパス
+/// * `is_mobile_support` - iOSで再生可能なコーデック(hevc)に変更するか
 /// * `crf` - Constant Rate Factor (0-51, 低いほど高画質)
 ///
 /// # 戻り値
@@ -68,6 +70,7 @@ pub fn is_match_extension(input_path: &str) -> bool {
 pub fn compress_video(
     input_path: &str,
     output_path: &str,
+    is_mobile_support: bool,
     crf: &str,
 ) -> Result<CompressionStats, String> {
     // 開始時間を記録
@@ -129,21 +132,21 @@ pub fn compress_video(
     
     // FFmpegコマンドの実行
     let mut command = Command::new("ffmpeg");
-    command.arg("-i")
-        .arg(input_path)
-        .arg("-c:v")
-        .arg("libsvtav1")
-        .arg("-crf")
-        .arg(crf);
+    command.args(&["-i", input_path]);
+    if cfg!(target_os = "macos") && is_mobile_support {
+        command.args(&["-c:v", "hevc_videotoolbox", "-crf", crf, "-tag:v", "hvc1"]);
+    } else if is_mobile_support {
+        command.args(&["-c:v", "libx265", "-crf", crf, "-tag:v", "hvc1"]);
+    } else {
+        command.args(&["-c:v", "libsvtav1", "-crf", crf]);
+    }
     
     command.args(&["-c:a", "aac", "-b:a", "128k"]);
     
     // リサイズフィルターを追加（必要な場合）
     if !resize_filter.is_empty() {
         let filter_parts: Vec<&str> = resize_filter.split_whitespace().collect();
-        for part in filter_parts {
-            command.arg(part);
-        }
+        command.args(filter_parts);
     }
     
     let status = command
