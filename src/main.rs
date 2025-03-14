@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 use clap::Parser;
 mod file;
 mod rgb_image;
@@ -49,14 +49,23 @@ fn main() {
                 if ext == "png" {
                     println!("rgba image: {:?}", filepath);
                     output_path.set_extension("png");
+                    if fs::metadata(&output_path).is_ok() {
+                        continue;
+                    }
                     rgba_image::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap());
                 } else if ext == "jpg" || ext == "jpeg" {
                     println!("rgb image: {:?}", filepath);
                     output_path.set_extension("jpg");
+                    if fs::metadata(&output_path).is_ok() {
+                        continue;
+                    }
                     rgb_image::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap(), args.quality);
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     println!("video: {:?}", filepath);
                     output_path.set_extension("mp4");
+                    if fs::metadata(&output_path).is_ok() {
+                        continue;
+                    }
                     video::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap());
                 }
             },
