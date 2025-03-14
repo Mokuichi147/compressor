@@ -3,3 +3,13 @@
 
 # MacOS
 .DS_Store
+
+# Files
+*.jpg
+*.jpeg
+*.png
+*.mov
+*.mp4
+*.avi
+*.mkv
+*.webm
