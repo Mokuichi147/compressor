@@ -7,15 +7,19 @@ mod video;
 
 #[derive(Parser)]
 struct AppArgs {
+    /// 圧縮済みファイルの保存先
     #[clap(short, long, default_value = "compress")]
     output_dir: String,
     
+    /// 圧縮したいファイル（入力のない場合は全て）
     #[clap(short, long, num_args = 1..)]
     input_file: Option<Vec<PathBuf>>,
 
+    /// RGB画像の圧縮率
     #[clap(short, long, default_value="70.0")]
     quality: f32,
 
+    /// 圧縮済みファイルを上書きして再圧縮するか
     #[clap(short, long)]
     force: bool
 }
