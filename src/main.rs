@@ -15,6 +15,9 @@ struct AppArgs {
 
     #[clap(short, long, default_value="70.0")]
     quality: f32,
+
+    #[clap(short, long)]
+    force: bool
 }
 
 fn main() {
@@ -49,21 +52,21 @@ fn main() {
                 if ext == "png" {
                     println!("rgba image: {:?}", filepath);
                     output_path.set_extension("png");
-                    if fs::metadata(&output_path).is_ok() {
+                    if fs::metadata(&output_path).is_ok() && !args.force {
                         continue;
                     }
                     rgba_image::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap());
                 } else if ext == "jpg" || ext == "jpeg" {
                     println!("rgb image: {:?}", filepath);
                     output_path.set_extension("jpg");
-                    if fs::metadata(&output_path).is_ok() {
+                    if fs::metadata(&output_path).is_ok() && !args.force {
                         continue;
                     }
                     rgb_image::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap(), args.quality);
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     println!("video: {:?}", filepath);
                     output_path.set_extension("mp4");
-                    if fs::metadata(&output_path).is_ok() {
+                    if fs::metadata(&output_path).is_ok() && !args.force {
                         continue;
                     }
                     video::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap());
