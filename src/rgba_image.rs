@@ -5,15 +5,15 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 
 
-pub fn path2compress(path: &str, output_path: &str) {
+pub fn path2compress(path: &PathBuf, output_path: &PathBuf) {
     let mut options = Options::from_preset(2);
     options.force = true;
 
-    let _ = optimize(&InFile::from(PathBuf::from(path)), &OutFile::from_path(PathBuf::from(output_path)), &options);
+    let _ = optimize(&InFile::from(path), &OutFile::from_path(output_path.to_path_buf()), &options);
 }
 
 #[allow(dead_code)]
-pub fn data2compress(data: &Vec<u8>, output_path: &str) {
+pub fn data2compress(data: &Vec<u8>, output_path: &PathBuf) {
     let img = image::load_from_memory(data).unwrap();
 
     let mut png_data = Vec::new();
@@ -23,7 +23,7 @@ pub fn data2compress(data: &Vec<u8>, output_path: &str) {
 }
 
 #[allow(dead_code)]
-pub fn compress(img: &DynamicImage, output_path: &str) {
+pub fn compress(img: &DynamicImage, output_path: &PathBuf) {
     let rgba_img = img.to_rgba8().into_raw();
 
     let mut options = Options::from_preset(2);

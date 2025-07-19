@@ -2,9 +2,10 @@ use image::DynamicImage;
 use mozjpeg::Compress;
 use std::fs::File;
 use std::io::BufWriter;
+use std::path::PathBuf;
 
 
-pub fn path2compress(path: &str, output_path: &str, quality: f32) {
+pub fn path2compress(path: &PathBuf, output_path: &PathBuf, quality: f32) {
     // 画像を読み込む
     let img = image::open(path).unwrap();
 
@@ -13,7 +14,7 @@ pub fn path2compress(path: &str, output_path: &str, quality: f32) {
 }
 
 #[allow(dead_code)]
-pub fn data2compress(data: &Vec<u8>, output_path: &str, quality: f32) {
+pub fn data2compress(data: &Vec<u8>, output_path: &PathBuf, quality: f32) {
     // 画像を読み込む
     let img = image::load_from_memory(data).unwrap();
 
@@ -22,7 +23,7 @@ pub fn data2compress(data: &Vec<u8>, output_path: &str, quality: f32) {
 }
 
 
-fn compress(img: &DynamicImage, output_path: &str, quality: f32) {
+fn compress(img: &DynamicImage, output_path: &PathBuf, quality: f32) {
     // 画像を読み込む
     let rgb_img = img.to_rgb8();
 
