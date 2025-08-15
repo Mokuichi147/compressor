@@ -3,7 +3,7 @@ use mozjpeg::Compress;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-
+use crate::utilities::get_aspect_ratio;
 
 pub fn path2compress(path: &PathBuf, output_path: &PathBuf, quality: f32) {
     // 画像を読み込む
@@ -20,6 +20,22 @@ pub fn data2compress(data: &Vec<u8>, output_path: &PathBuf, quality: f32) {
 
     // 軽量画像の作成
     compress(&img, output_path, quality);
+}
+
+#[allow(dead_code)]
+pub fn get_aspect_ratio_from_path(path: &PathBuf) -> f32 {
+    // 画像を読み込む
+    let img = image::open(path).unwrap();
+
+    get_aspect_ratio(img.width(), img.height())
+}
+
+#[allow(dead_code)]
+pub fn get_aspect_ratio_from_data(data: &Vec<u8>) -> f32 {
+    // 画像を読み込む
+    let img = image::load_from_memory(data).unwrap();
+
+    get_aspect_ratio(img.width(), img.height())
 }
 
 

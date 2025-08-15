@@ -1,6 +1,7 @@
 use std::{fs, path::PathBuf};
 use clap::Parser;
 mod file;
+mod utilities;
 mod rgb_image;
 mod rgba_image;
 mod video;

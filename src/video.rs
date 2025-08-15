@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
 use std::time::Instant;
+use crate::utilities::get_aspect_ratio;
 
 /// 動画圧縮の結果統計情報
 #[allow(dead_code)]
@@ -117,9 +118,9 @@ pub fn compress_video(
     // 解像度情報が正しく取得できた場合
     if dimensions.len() == 2 {
         if let (Ok(width), Ok(height)) = (dimensions[0].parse::<u32>(), dimensions[1].parse::<u32>()) {
-            // アスペクト比を計算（小数点以下3桁まで）
-            let aspect_ratio = (width as f64 / height as f64 * 1000.0).round() / 1000.0;
-            
+            // アスペクト比を計算
+            let aspect_ratio = get_aspect_ratio(width, height);
+
             // 16:9のアスペクト比は約1.778
             let is_16_9 = aspect_ratio >= 1.775 && aspect_ratio <= 1.781;
             

@@ -3,7 +3,7 @@ use oxipng::{optimize, optimize_from_memory, InFile, Options, OutFile};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-
+use crate::utilities::get_aspect_ratio;
 
 pub fn path2compress(path: &PathBuf, output_path: &PathBuf) {
     let mut options = Options::from_preset(2);
@@ -20,6 +20,22 @@ pub fn data2compress(data: &Vec<u8>, output_path: &PathBuf) {
     img.write_to(&mut std::io::Cursor::new(&mut png_data), image::ImageFormat::Png).unwrap();
 
     compress(&img, output_path);
+}
+
+#[allow(dead_code)]
+pub fn get_aspect_ratio_from_path(path: &PathBuf) -> f32 {
+    // 画像を読み込む
+    let img = image::open(path).unwrap();
+
+    get_aspect_ratio(img.width(), img.height())
+}
+
+#[allow(dead_code)]
+pub fn get_aspect_ratio_from_data(data: &Vec<u8>) -> f32 {
+    // 画像を読み込む
+    let img = image::load_from_memory(data).unwrap();
+
+    get_aspect_ratio(img.width(), img.height())
 }
 
 #[allow(dead_code)]
