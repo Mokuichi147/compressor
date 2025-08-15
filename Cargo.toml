@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.41", features = ["derive"] }
+clap = { version = "4.5.45", features = ["derive"] }
 image = "0.25.6"
 mozjpeg = "0.10.13"
 oxipng = "9.1.5"
