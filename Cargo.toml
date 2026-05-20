@@ -8,6 +8,4 @@ clap = { version = "4.5.45", features = ["derive"] }
 image = "0.25.6"
 mozjpeg = "0.10.13"
 oxipng = "9.1.5"
-
-[dev-dependencies]
 webp = "0.3"

@@ -4,6 +4,7 @@ mod file;
 mod utilities;
 mod rgb_image;
 mod rgba_image;
+mod webp_image;
 mod video;
 
 #[derive(Parser)]
@@ -22,7 +23,11 @@ struct AppArgs {
 
     /// 圧縮済みファイルを上書きして再圧縮するか
     #[clap(short, long)]
-    force: bool
+    force: bool,
+
+    /// 画像をWebPで出力する（jpg/jpeg→非可逆, png→可逆）
+    #[clap(short, long)]
+    webp: bool
 }
 
 fn main() {
@@ -55,19 +60,37 @@ fn main() {
             Some(ext) => {
                 let ext = ext.to_string_lossy().to_lowercase();
                 if ext == "png" {
-                    println!("rgba image: {:?}", filepath);
-                    output_path.set_extension("png");
-                    if fs::metadata(&output_path).is_ok() && !args.force {
-                        continue;
+                    if args.webp {
+                        println!("png -> webp (lossless): {:?}", filepath);
+                        output_path.set_extension("webp");
+                        if fs::metadata(&output_path).is_ok() && !args.force {
+                            continue;
+                        }
+                        webp_image::path2compress_lossless(&PathBuf::from(&filepath), &output_path);
+                    } else {
+                        println!("rgba image: {:?}", filepath);
+                        output_path.set_extension("png");
+                        if fs::metadata(&output_path).is_ok() && !args.force {
+                            continue;
+                        }
+                        rgba_image::path2compress(&PathBuf::from(&filepath), &output_path);
                     }
-                    rgba_image::path2compress(&PathBuf::from(&filepath), &PathBuf::from(output_path));
                 } else if ext == "jpg" || ext == "jpeg" {
-                    println!("rgb image: {:?}", filepath);
-                    output_path.set_extension("jpg");
-                    if fs::metadata(&output_path).is_ok() && !args.force {
-                        continue;
+                    if args.webp {
+                        println!("jpg -> webp (lossy): {:?}", filepath);
+                        output_path.set_extension("webp");
+                        if fs::metadata(&output_path).is_ok() && !args.force {
+                            continue;
+                        }
+                        webp_image::path2compress_lossy(&PathBuf::from(&filepath), &output_path, args.quality);
+                    } else {
+                        println!("rgb image: {:?}", filepath);
+                        output_path.set_extension("jpg");
+                        if fs::metadata(&output_path).is_ok() && !args.force {
+                            continue;
+                        }
+                        rgb_image::path2compress(&PathBuf::from(&filepath), &output_path, args.quality);
                     }
-                    rgb_image::path2compress(&PathBuf::from(&filepath), &PathBuf::from(output_path), args.quality);
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     println!("video: {:?}", filepath);
                     output_path.set_extension("mp4");
