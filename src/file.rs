@@ -1,4 +1,4 @@
-use std::{fs, path::{Component, PathBuf}};
+use std::{collections::HashSet, fs, path::{Component, PathBuf}};
 
 /// 指定されたディレクトリ内のファイルを再帰的に取得する
 pub fn get_files(dir: &str) -> Vec<PathBuf> {
@@ -40,4 +40,19 @@ pub fn get_relative_path(from: &PathBuf, to: &PathBuf) -> PathBuf {
         }
     }
     relative
+}
+
+/// `--webp` 出力先のパスを決める。通常は拡張子を `webp` に置き換えるが、
+/// 同一実行内で別の入力が既に同じ名前を取っている場合は元の拡張子を残して
+/// 衝突（無言スキップ）を防ぐ。
+/// 例: photo.jpg と photo.png → photo.webp, photo.png.webp
+pub fn webp_target(base: &PathBuf, used: &mut HashSet<PathBuf>) -> PathBuf {
+    let mut clean = base.clone();
+    clean.set_extension("webp");
+    if used.insert(clean.clone()) {
+        clean
+    } else {
+        let name = base.file_name().unwrap().to_string_lossy().into_owned();
+        base.with_file_name(format!("{name}.webp"))
+    }
 }

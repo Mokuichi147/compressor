@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf};
 use clap::Parser;
 mod file;
 mod utilities;
@@ -41,6 +41,9 @@ fn main() {
     std::fs::create_dir_all(&args.output_dir).unwrap();
     let root_dir = PathBuf::from(".");
 
+    // --webp で生成済みの出力先を記録し、同名衝突を回避する
+    let mut webp_outputs: HashSet<PathBuf> = HashSet::new();
+
     for input_file in input_files.iter() {
         let filepath = input_file.to_str().unwrap();
         let extension = input_file.extension();
@@ -66,12 +69,12 @@ fn main() {
                 let ext = ext.to_string_lossy().to_lowercase();
                 if ext == "png" {
                     if args.webp {
-                        println!("png -> webp (lossless): {:?}", filepath);
-                        output_path.set_extension("webp");
-                        if fs::metadata(&output_path).is_ok() && !args.force {
+                        let target = file::webp_target(&output_path, &mut webp_outputs);
+                        println!("png -> webp (lossless): {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        webp_image::path2compress_lossless(&PathBuf::from(&filepath), &output_path);
+                        webp_image::path2compress_lossless(&PathBuf::from(&filepath), &target);
                     } else {
                         println!("rgba image: {:?}", filepath);
                         output_path.set_extension("png");
@@ -82,12 +85,12 @@ fn main() {
                     }
                 } else if ext == "jpg" || ext == "jpeg" {
                     if args.webp {
-                        println!("jpg -> webp (lossy): {:?}", filepath);
-                        output_path.set_extension("webp");
-                        if fs::metadata(&output_path).is_ok() && !args.force {
+                        let target = file::webp_target(&output_path, &mut webp_outputs);
+                        println!("jpg -> webp (lossy): {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        webp_image::path2compress_lossy(&PathBuf::from(&filepath), &output_path, args.quality);
+                        webp_image::path2compress_lossy(&PathBuf::from(&filepath), &target, args.quality);
                     } else {
                         println!("rgb image: {:?}", filepath);
                         output_path.set_extension("jpg");
