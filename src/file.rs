@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::{Component, PathBuf}};
 
 /// 指定されたディレクトリ内のファイルを再帰的に取得する
 pub fn get_files(dir: &str) -> Vec<PathBuf> {
@@ -25,7 +25,19 @@ pub fn get_absolute_path(dir: &PathBuf) -> PathBuf {
     fs::canonicalize(dir).unwrap()
 }
 
-/// 絶対パス2つから相対パスを取得する
+/// `to` を `from` 起点の相対パスにする。
+/// 接頭辞が一致しない場合（`-i` で `./` なしや絶対パスを渡した場合）でも
+/// panic せず、ルート・`.`・`..` を取り除いて output_dir 配下に収まる相対パスを返す。
 pub fn get_relative_path(from: &PathBuf, to: &PathBuf) -> PathBuf {
-    to.strip_prefix(from).ok().map(|p| p.to_path_buf()).unwrap()
+    if let Ok(stripped) = to.strip_prefix(from) {
+        return stripped.to_path_buf();
+    }
+
+    let mut relative = PathBuf::new();
+    for component in to.components() {
+        if let Component::Normal(part) = component {
+            relative.push(part);
+        }
+    }
+    relative
 }

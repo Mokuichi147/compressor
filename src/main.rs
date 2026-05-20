@@ -56,6 +56,11 @@ fn main() {
         let mut output_path = PathBuf::from(args.output_dir.clone());
         output_path.push(relative_path);
 
+        // 入力がサブディレクトリ配下の場合、出力先の親ディレクトリを作成する
+        if let Some(parent) = output_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+
         match extension {
             Some(ext) => {
                 let ext = ext.to_string_lossy().to_lowercase();
