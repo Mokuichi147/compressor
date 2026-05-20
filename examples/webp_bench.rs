@@ -47,8 +47,8 @@ fn main() {
     // ---- 非可逆比較: mozjpeg vs WebP lossy ----
     println!("== 非可逆圧縮: mozjpeg(q{quality}) vs WebP lossy(q{quality}) ==");
     println!(
-        "{:<14} {:>9} {:>9} {:>9} {:>7} {:>7} {:>7} {:>7} {:>8} {:>8}",
-        "image", "orig(KB)", "jpeg(KB)", "webp(KB)", "webp/jpg", "jp_PSNR", "wp_PSNR", "jp_SSIM", "wp_SSIM", "size%"
+        "{:<14} {:>9} {:>9} {:>9} {:>8} {:>8} {:>7} {:>7} {:>7} {:>8} {:>8}",
+        "image", "orig(KB)", "jpeg(KB)", "webp(KB)", "jpg省%", "webp省%", "wp/jpg", "jpPSNR", "wpPSNR", "jpSSIM", "wpSSIM"
     );
 
     let mut tot_orig = 0u64;
@@ -86,26 +86,29 @@ fn main() {
         webp_ms_tot += webp_ms;
 
         println!(
-            "{:<14} {:>9.1} {:>9.1} {:>9.1} {:>7.2} {:>7.2} {:>7.2} {:>7.4} {:>8.4} {:>7.1}%",
+            "{:<14} {:>9.1} {:>9.1} {:>9.1} {:>7.1}% {:>7.1}% {:>7.2} {:>7.2} {:>7.2} {:>7.4} {:>8.4}",
             short(path),
             orig_bytes as f64 / 1024.0,
             jpeg.len() as f64 / 1024.0,
             wp.len() as f64 / 1024.0,
+            (1.0 - jpeg.len() as f64 / orig_bytes as f64) * 100.0,
+            (1.0 - wp.len() as f64 / orig_bytes as f64) * 100.0,
             wp.len() as f64 / jpeg.len() as f64,
             jp_psnr,
             wp_psnr,
             jp_ssim,
-            wp_ssim,
-            (wp.len() as f64 / jpeg.len() as f64 - 1.0) * 100.0
+            wp_ssim
         );
     }
 
     let n = paths.len() as f64;
     println!(
-        "\n  合計  : orig {:.1}KB  jpeg {:.1}KB  webp {:.1}KB  → WebPは対mozjpeg {:+.1}%",
+        "\n  合計  : orig {:.1}KB  jpeg {:.1}KB ({:+.1}% vs orig)  webp {:.1}KB ({:+.1}% vs orig)  → WebPは対mozjpeg {:+.1}%",
         tot_orig as f64 / 1024.0,
         tot_jpeg as f64 / 1024.0,
+        (tot_jpeg as f64 / tot_orig as f64 - 1.0) * 100.0,
         tot_webp as f64 / 1024.0,
+        (tot_webp as f64 / tot_orig as f64 - 1.0) * 100.0,
         (tot_webp as f64 / tot_jpeg as f64 - 1.0) * 100.0
     );
     println!(
@@ -125,8 +128,8 @@ fn main() {
     // ---- 可逆比較: oxipng vs WebP lossless ----
     println!("\n== 可逆圧縮: oxipng(preset2) vs WebP lossless ==");
     println!(
-        "{:<14} {:>9} {:>10} {:>10} {:>9} {:>9} {:>10}",
-        "image", "orig(KB)", "oxipng(KB)", "webpL(KB)", "ox_ms", "wp_ms", "webpL/oxi"
+        "{:<14} {:>9} {:>10} {:>10} {:>8} {:>8} {:>9} {:>8} {:>8}",
+        "image", "orig(KB)", "oxipng(KB)", "webpL(KB)", "oxi省%", "webpL省%", "webpL/oxi", "ox_ms", "wp_ms"
     );
 
     let (mut tot_oxi, mut tot_wpl) = (0u64, 0u64);
@@ -149,21 +152,25 @@ fn main() {
         wpl_ms_tot += wpl_ms;
 
         println!(
-            "{:<14} {:>9.1} {:>10.1} {:>10.1} {:>8.1} {:>8.1} {:>9.2}",
+            "{:<14} {:>9.1} {:>10.1} {:>10.1} {:>7.1}% {:>8.1}% {:>9.2} {:>8.1} {:>8.1}",
             short(path),
             src.len() as f64 / 1024.0,
             oxi.len() as f64 / 1024.0,
             wpl.len() as f64 / 1024.0,
+            (1.0 - oxi.len() as f64 / src.len() as f64) * 100.0,
+            (1.0 - wpl.len() as f64 / src.len() as f64) * 100.0,
+            wpl.len() as f64 / oxi.len() as f64,
             oxi_ms,
-            wpl_ms,
-            wpl.len() as f64 / oxi.len() as f64
+            wpl_ms
         );
     }
 
     println!(
-        "\n  合計  : oxipng {:.1}KB  webp-lossless {:.1}KB  → WebP可逆は対oxipng {:+.1}%",
+        "\n  合計  : oxipng {:.1}KB ({:+.1}% vs orig)  webp-lossless {:.1}KB ({:+.1}% vs orig)  → WebP可逆は対oxipng {:+.1}%",
         tot_oxi as f64 / 1024.0,
+        (tot_oxi as f64 / tot_orig as f64 - 1.0) * 100.0,
         tot_wpl as f64 / 1024.0,
+        (tot_wpl as f64 / tot_orig as f64 - 1.0) * 100.0,
         (tot_wpl as f64 / tot_oxi as f64 - 1.0) * 100.0
     );
     println!(
@@ -171,6 +178,24 @@ fn main() {
         oxi_ms_tot / n,
         wpl_ms_tot / n
     );
+
+    // ---- ファイルサイズ総括 (全形式 / 元PNG比) ----
+    println!("\n== ファイルサイズ総括 (合計, 元PNG {:.1}KB との比) ==", tot_orig as f64 / 1024.0);
+    println!("{:<22} {:>10} {:>12} {:>10}", "形式", "合計(KB)", "元PNG比", "種別");
+    let row = |label: &str, bytes: u64, kind: &str| {
+        println!(
+            "{:<22} {:>10.1} {:>11.1}% {:>10}",
+            label,
+            bytes as f64 / 1024.0,
+            (bytes as f64 / tot_orig as f64 - 1.0) * 100.0,
+            kind
+        );
+    };
+    row("元PNG (無加工)", tot_orig, "—");
+    row(&format!("mozjpeg q{quality}"), tot_jpeg, "非可逆");
+    row(&format!("WebP lossy q{quality}"), tot_webp, "非可逆");
+    row("oxipng preset2", tot_oxi, "可逆");
+    row("WebP lossless", tot_wpl, "可逆");
 }
 
 fn short(p: &Path) -> String {
