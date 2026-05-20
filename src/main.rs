@@ -1,9 +1,10 @@
-use std::{fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf};
 use clap::Parser;
 mod file;
 mod utilities;
 mod rgb_image;
 mod rgba_image;
+mod webp_image;
 mod video;
 
 #[derive(Parser)]
@@ -22,7 +23,11 @@ struct AppArgs {
 
     /// 圧縮済みファイルを上書きして再圧縮するか
     #[clap(short, long)]
-    force: bool
+    force: bool,
+
+    /// 画像をWebPで出力する（jpg/jpeg→非可逆, png→可逆）
+    #[clap(short, long)]
+    webp: bool
 }
 
 fn main() {
@@ -35,6 +40,9 @@ fn main() {
 
     std::fs::create_dir_all(&args.output_dir).unwrap();
     let root_dir = PathBuf::from(".");
+
+    // --webp で生成済みの出力先を記録し、同名衝突を回避する
+    let mut webp_outputs: HashSet<PathBuf> = HashSet::new();
 
     for input_file in input_files.iter() {
         let filepath = input_file.to_str().unwrap();
@@ -51,23 +59,46 @@ fn main() {
         let mut output_path = PathBuf::from(args.output_dir.clone());
         output_path.push(relative_path);
 
+        // 入力がサブディレクトリ配下の場合、出力先の親ディレクトリを作成する
+        if let Some(parent) = output_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+
         match extension {
             Some(ext) => {
                 let ext = ext.to_string_lossy().to_lowercase();
                 if ext == "png" {
-                    println!("rgba image: {:?}", filepath);
-                    output_path.set_extension("png");
-                    if fs::metadata(&output_path).is_ok() && !args.force {
-                        continue;
+                    if args.webp {
+                        let target = file::webp_target(&output_path, &mut webp_outputs);
+                        println!("png -> webp (lossless): {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
+                            continue;
+                        }
+                        webp_image::path2compress_lossless(&PathBuf::from(&filepath), &target);
+                    } else {
+                        println!("rgba image: {:?}", filepath);
+                        output_path.set_extension("png");
+                        if fs::metadata(&output_path).is_ok() && !args.force {
+                            continue;
+                        }
+                        rgba_image::path2compress(&PathBuf::from(&filepath), &output_path);
                     }
-                    rgba_image::path2compress(&PathBuf::from(&filepath), &PathBuf::from(output_path));
                 } else if ext == "jpg" || ext == "jpeg" {
-                    println!("rgb image: {:?}", filepath);
-                    output_path.set_extension("jpg");
-                    if fs::metadata(&output_path).is_ok() && !args.force {
-                        continue;
+                    if args.webp {
+                        let target = file::webp_target(&output_path, &mut webp_outputs);
+                        println!("jpg -> webp (lossy): {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
+                            continue;
+                        }
+                        webp_image::path2compress_lossy(&PathBuf::from(&filepath), &target, args.quality);
+                    } else {
+                        println!("rgb image: {:?}", filepath);
+                        output_path.set_extension("jpg");
+                        if fs::metadata(&output_path).is_ok() && !args.force {
+                            continue;
+                        }
+                        rgb_image::path2compress(&PathBuf::from(&filepath), &output_path, args.quality);
                     }
-                    rgb_image::path2compress(&PathBuf::from(&filepath), &PathBuf::from(output_path), args.quality);
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     println!("video: {:?}", filepath);
                     output_path.set_extension("mp4");

@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::{Component, PathBuf}};
 
 /// 指定されたディレクトリ内のファイルを再帰的に取得する
 pub fn get_files(dir: &str) -> Vec<PathBuf> {
@@ -25,7 +25,34 @@ pub fn get_absolute_path(dir: &PathBuf) -> PathBuf {
     fs::canonicalize(dir).unwrap()
 }
 
-/// 絶対パス2つから相対パスを取得する
+/// `to` を `from` 起点の相対パスにする。
+/// 接頭辞が一致しない場合（`-i` で `./` なしや絶対パスを渡した場合）でも
+/// panic せず、ルート・`.`・`..` を取り除いて output_dir 配下に収まる相対パスを返す。
 pub fn get_relative_path(from: &PathBuf, to: &PathBuf) -> PathBuf {
-    to.strip_prefix(from).ok().map(|p| p.to_path_buf()).unwrap()
+    if let Ok(stripped) = to.strip_prefix(from) {
+        return stripped.to_path_buf();
+    }
+
+    let mut relative = PathBuf::new();
+    for component in to.components() {
+        if let Component::Normal(part) = component {
+            relative.push(part);
+        }
+    }
+    relative
+}
+
+/// `--webp` 出力先のパスを決める。通常は拡張子を `webp` に置き換えるが、
+/// 同一実行内で別の入力が既に同じ名前を取っている場合は元の拡張子を残して
+/// 衝突（無言スキップ）を防ぐ。
+/// 例: photo.jpg と photo.png → photo.webp, photo.png.webp
+pub fn webp_target(base: &PathBuf, used: &mut HashSet<PathBuf>) -> PathBuf {
+    let mut clean = base.clone();
+    clean.set_extension("webp");
+    if used.insert(clean.clone()) {
+        clean
+    } else {
+        let name = base.file_name().unwrap().to_string_lossy().into_owned();
+        base.with_file_name(format!("{name}.webp"))
+    }
 }
