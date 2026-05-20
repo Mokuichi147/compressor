@@ -6,7 +6,7 @@
 - [x] png
 - [x] webp（`--webp` 指定時に jpg/jpeg/png から出力）
 - [x] mov, mp4, avi, mkv, webm
-- [ ] gif
+- [x] gif（静止GIFは画像として、アニメGIFは動画として圧縮）
 
 ## 使い方
 ### セットアップ
@@ -31,6 +31,11 @@ Options:
 
 `--webp` を付けると画像をWebPで出力します（jpg/jpeg は品質指定の非可逆、png は可逆）。
 拡張子は `.webp` になります。動画は対象外です。
+
+GIFは内容に応じて自動で振り分けます。静止GIF（1フレーム）は画像として扱い、既定では
+oxipngで最適化した `.png`、`--webp` 指定時は可逆WebPを出力します。アニメーションGIF
+（2フレーム以上）は動画として扱い、ffmpegで `.mp4` に変換します（動画と同様 `--webp` の対象外、
+ffmpegが必要）。
 
 ## ライセンス
 Dual-licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).

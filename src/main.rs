@@ -5,6 +5,7 @@ mod utilities;
 mod rgb_image;
 mod rgba_image;
 mod webp_image;
+mod gif_image;
 mod video;
 
 #[derive(Parser)]
@@ -98,6 +99,33 @@ fn main() {
                             continue;
                         }
                         rgb_image::path2compress(&PathBuf::from(&filepath), &output_path, args.quality);
+                    }
+                } else if ext == "gif" {
+                    let src = PathBuf::from(&filepath);
+                    if gif_image::is_animated(&src) {
+                        // アニメーションGIFは動画として扱う（READMEに従い --webp は対象外）
+                        println!("animated gif -> mp4: {:?}", filepath);
+                        output_path.set_extension("mp4");
+                        if fs::metadata(&output_path).is_ok() && !args.force {
+                            continue;
+                        }
+                        video::path2compress(filepath.to_str().unwrap(), output_path.to_str().unwrap());
+                    } else if args.webp {
+                        // 静止GIFは画像として扱う（可逆WebP）
+                        let target = file::webp_target(&output_path, &mut webp_outputs);
+                        println!("gif -> webp (lossless): {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
+                            continue;
+                        }
+                        webp_image::path2compress_lossless(&src, &target);
+                    } else {
+                        // 静止GIFは画像として扱う（oxipngでPNG化）
+                        println!("gif -> png: {:?}", filepath);
+                        output_path.set_extension("png");
+                        if fs::metadata(&output_path).is_ok() && !args.force {
+                            continue;
+                        }
+                        gif_image::path2compress_png(&src, &output_path);
                     }
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     println!("video: {:?}", filepath);
