@@ -17,10 +17,29 @@ pub struct CompressionStats {
     pub duration_seconds: f64,
 }
 
-pub fn path2compress(input_path: &str, output_path: &str) {
-    let crf = "35";
-    let is_mobile_support = true;
-    let _ = compress_video(input_path, output_path, is_mobile_support, crf).unwrap();
+/// 動画の出力コーデック
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum VideoCodec {
+    /// AV1 (libsvtav1)。最も圧縮率が高い。既定。
+    Av1,
+    /// HEVC/H.265 (libx265, hvc1 タグ)。iOS など旧来デバイスでの再生互換性が高い。
+    Hevc,
+}
+
+impl VideoCodec {
+    /// 未指定時に使う、コーデックごとの既定 CRF。
+    /// CRF スケールはコーデック間で異なるため値を分ける。
+    fn default_crf(self) -> u8 {
+        match self {
+            VideoCodec::Av1 => 40,
+            VideoCodec::Hevc => 28,
+        }
+    }
+}
+
+pub fn path2compress(input_path: &str, output_path: &str, codec: VideoCodec, crf: Option<u8>) {
+    let crf = crf.unwrap_or_else(|| codec.default_crf());
+    let _ = compress_video(input_path, output_path, codec, crf).unwrap();
 }
 
 pub fn is_match_extension(input_path: &str) -> bool {
@@ -44,12 +63,15 @@ pub fn is_match_extension(input_path: &str) -> bool {
 
 /// 動画ファイルを圧縮する関数
 ///
+/// CRF を尊重するソフトウェアエンコーダ（AV1: libsvtav1, HEVC: libx265）を用いる。
+/// ハードウェアエンコーダ（videotoolbox/nvenc）は `-crf` を無視して圧縮率が落ちるため使わない。
+///
 /// # 引数
 ///
 /// * `input_path` - 入力元の動画ファイルパス
 /// * `output_path` - 圧縮後の出力先ファイルパス
-/// * `is_mobile_support` - iOSで再生可能なコーデック(hevc)に変更するか
-/// * `crf` - Constant Rate Factor (0-51, 低いほど高画質)
+/// * `codec` - 出力コーデック（AV1 もしくは HEVC）
+/// * `crf` - Constant Rate Factor（低いほど高画質・大きいファイル）
 ///
 /// # 戻り値
 ///
@@ -57,11 +79,12 @@ pub fn is_match_extension(input_path: &str) -> bool {
 ///
 /// # 例
 ///
-/// ```
+/// ```ignore
 /// let result = compress_video(
-///     Path::new("/path/to/input.mp4"),
-///     Path::new("/path/to/output.mp4"),
-///     "23"
+///     "/path/to/input.mp4",
+///     "/path/to/output.mp4",
+///     VideoCodec::Av1,
+///     40,
 /// );
 /// match result {
 ///     Ok(stats) => println!("圧縮完了: {}% 削減", stats.size_reduction_percent),
@@ -71,8 +94,8 @@ pub fn is_match_extension(input_path: &str) -> bool {
 pub fn compress_video(
     input_path: &str,
     output_path: &str,
-    is_mobile_support: bool,
-    crf: &str,
+    codec: VideoCodec,
+    crf: u8,
 ) -> Result<CompressionStats, String> {
     // 開始時間を記録
     let start = Instant::now();
@@ -132,27 +155,32 @@ pub fn compress_video(
     }
     
     // FFmpegコマンドの実行
+    let crf = crf.to_string();
     let mut command = Command::new("ffmpeg");
     command.args(&["-i", input_path]);
-    if cfg!(target_os = "macos") && is_mobile_support {
-        command.args(&["-c:v", "hevc_videotoolbox", "-crf", crf, "-tag:v", "hvc1"]);
-    } else if cfg!(target_os = "windows") && is_mobile_support {
-        command.args(&["-c:v", "hevc_nvenc", "-crf", crf, "-tag:v", "hvc1"]);
-    } else if is_mobile_support {
-        command.args(&["-c:v", "libx265", "-crf", crf, "-tag:v", "hvc1"]);
-    } else {
-        command.args(&["-c:v", "libsvtav1", "-crf", crf]);
+    match codec {
+        // AV1: 圧縮率最優先。preset 5 は速度と効率のバランス（小さいほど高効率）。
+        VideoCodec::Av1 => {
+            command.args(&["-c:v", "libsvtav1", "-preset", "5", "-crf", &crf]);
+        }
+        // HEVC: hvc1 タグで iOS/QuickTime 再生互換。preset slow で圧縮効率を確保。
+        VideoCodec::Hevc => {
+            command.args(&["-c:v", "libx265", "-preset", "slow", "-crf", &crf, "-tag:v", "hvc1"]);
+        }
     }
-    
+
+    // 幅広い再生互換のため 8bit 4:2:0 に固定
+    command.args(&["-pix_fmt", "yuv420p"]);
     command.args(&["-c:a", "aac", "-b:a", "128k"]);
-    
+
     // リサイズフィルターを追加（必要な場合）
     if !resize_filter.is_empty() {
         let filter_parts: Vec<&str> = resize_filter.split_whitespace().collect();
         command.args(filter_parts);
     }
-    
+
     let status = command
+        .args(&["-movflags", "+faststart"]) // ストリーミング向けに moov を先頭へ
         .arg("-y") // 確認なしで上書き
         .arg(output_file_path)
         .status()

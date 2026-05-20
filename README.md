@@ -26,11 +26,24 @@ Options:
   -q, --quality <QUALITY>           RGB画像の圧縮率 [default: 70.0]
   -f, --force                       圧縮済みファイルを上書きして再圧縮するか
   -w, --webp                        画像をWebPで出力する（jpg/jpeg→非可逆, png→可逆）
+      --hevc                        動画をHEVC(H.265)で出力する（既定はAV1）
+      --crf <CRF>                   動画の品質。低いほど高品質・大きいファイル（既定: AV1=40, HEVC=28）
   -h, --help                        Print help
 ```
 
 `--webp` を付けると画像をWebPで出力します（jpg/jpeg は品質指定の非可逆、png は可逆）。
 拡張子は `.webp` になります。動画は対象外です。
+
+### 動画の圧縮
+動画は CRF を尊重するソフトウェアエンコーダで圧縮します（出力は `.mp4`）。
+
+- 既定は **AV1**（`libsvtav1`）。同等品質で HEVC より大幅に小さくなります。
+- `--hevc` を付けると **HEVC/H.265**（`libx265`, `hvc1` タグ）で出力します。iOS など旧来デバイスでの再生互換性が高い反面、AV1 より圧縮率は劣ります。
+- `--crf` で品質を調整できます。値が低いほど高品質・大きいファイルになります。
+
+> CRF スケールはコーデックで異なります（AV1 の方が同じ数値でも高品質寄り）。そのため未指定時の既定値はコーデックごとに分けています（AV1=40, HEVC=28）。
+
+> AV1 はハードウェア再生対応が限られる機器があります（M1/M2 Mac、iPhone 15 Pro 未満、一部 Android/旧TV など）。これらでの再生互換を重視する場合は `--hevc` を使ってください。
 
 ## ライセンス
 Dual-licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).

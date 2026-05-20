@@ -27,7 +27,15 @@ struct AppArgs {
 
     /// 画像をWebPで出力する（jpg/jpeg→非可逆, png→可逆）
     #[clap(short, long)]
-    webp: bool
+    webp: bool,
+
+    /// 動画をHEVC(H.265)で出力する（既定はAV1。HEVCは旧来デバイスでの再生互換性が高い）
+    #[clap(long)]
+    hevc: bool,
+
+    /// 動画の品質 (CRF)。低いほど高品質・大きいファイル。未指定時はコーデックごとの既定値
+    #[clap(long)]
+    crf: Option<u8>,
 }
 
 fn main() {
@@ -100,12 +108,17 @@ fn main() {
                         rgb_image::path2compress(&PathBuf::from(&filepath), &output_path, args.quality);
                     }
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
-                    println!("video: {:?}", filepath);
+                    let codec = if args.hevc {
+                        video::VideoCodec::Hevc
+                    } else {
+                        video::VideoCodec::Av1
+                    };
+                    println!("video ({}): {:?}", if args.hevc { "hevc" } else { "av1" }, filepath);
                     output_path.set_extension("mp4");
                     if fs::metadata(&output_path).is_ok() && !args.force {
                         continue;
                     }
-                    video::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap());
+                    video::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap(), codec, args.crf);
                 }
             },
             None => continue,
