@@ -3,51 +3,56 @@ use oxipng::{optimize, optimize_from_memory, InFile, Options, OutFile};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
+use crate::error::CompressError;
 use crate::utilities::get_aspect_ratio;
 
-pub fn path2compress(path: &PathBuf, output_path: &PathBuf) {
+pub fn path2compress(path: &PathBuf, output_path: &PathBuf) -> Result<(), CompressError> {
     let mut options = Options::from_preset(2);
     options.force = true;
 
-    let _ = optimize(&InFile::from(path), &OutFile::from_path(output_path.to_path_buf()), &options);
+    optimize(&InFile::from(path), &OutFile::from_path(output_path.to_path_buf()), &options)?;
+
+    Ok(())
 }
 
 #[allow(dead_code)]
-pub fn data2compress(data: &Vec<u8>, output_path: &PathBuf) {
-    let img = image::load_from_memory(data).unwrap();
+pub fn data2compress(data: &Vec<u8>, output_path: &PathBuf) -> Result<(), CompressError> {
+    let img = image::load_from_memory(data)?;
 
     let mut png_data = Vec::new();
-    img.write_to(&mut std::io::Cursor::new(&mut png_data), image::ImageFormat::Png).unwrap();
+    img.write_to(&mut std::io::Cursor::new(&mut png_data), image::ImageFormat::Png)?;
 
-    compress(&img, output_path);
+    compress(&img, output_path)
 }
 
 #[allow(dead_code)]
-pub fn get_aspect_ratio_from_path(path: &PathBuf) -> f32 {
+pub fn get_aspect_ratio_from_path(path: &PathBuf) -> Result<f32, CompressError> {
     // 画像を読み込む
-    let img = image::open(path).unwrap();
+    let img = image::open(path)?;
 
-    get_aspect_ratio(img.width(), img.height())
+    Ok(get_aspect_ratio(img.width(), img.height()))
 }
 
 #[allow(dead_code)]
-pub fn get_aspect_ratio_from_data(data: &Vec<u8>) -> f32 {
+pub fn get_aspect_ratio_from_data(data: &Vec<u8>) -> Result<f32, CompressError> {
     // 画像を読み込む
-    let img = image::load_from_memory(data).unwrap();
+    let img = image::load_from_memory(data)?;
 
-    get_aspect_ratio(img.width(), img.height())
+    Ok(get_aspect_ratio(img.width(), img.height()))
 }
 
 #[allow(dead_code)]
-pub fn compress(img: &DynamicImage, output_path: &PathBuf) {
+pub fn compress(img: &DynamicImage, output_path: &PathBuf) -> Result<(), CompressError> {
     let rgba_img = img.to_rgba8().into_raw();
 
     let mut options = Options::from_preset(2);
     options.force = true;
 
-    let png_data = optimize_from_memory(&rgba_img, &options).unwrap();
+    let png_data = optimize_from_memory(&rgba_img, &options)?;
 
-    let file = File::create(output_path).unwrap();
+    let file = File::create(output_path)?;
     let mut writer = BufWriter::new(file);
-    std::io::copy(&mut &png_data[..], &mut writer).unwrap();
+    std::io::copy(&mut &png_data[..], &mut writer)?;
+
+    Ok(())
 }

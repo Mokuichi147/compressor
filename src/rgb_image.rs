@@ -3,43 +3,44 @@ use mozjpeg::Compress;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
+use crate::error::CompressError;
 use crate::utilities::get_aspect_ratio;
 
-pub fn path2compress(path: &PathBuf, output_path: &PathBuf, quality: f32) {
+pub fn path2compress(path: &PathBuf, output_path: &PathBuf, quality: f32) -> Result<(), CompressError> {
     // 画像を読み込む
-    let img = image::open(path).unwrap();
+    let img = image::open(path)?;
 
     // 軽量画像の作成
-    compress(&img, output_path, quality);
+    compress(&img, output_path, quality)
 }
 
 #[allow(dead_code)]
-pub fn data2compress(data: &Vec<u8>, output_path: &PathBuf, quality: f32) {
+pub fn data2compress(data: &Vec<u8>, output_path: &PathBuf, quality: f32) -> Result<(), CompressError> {
     // 画像を読み込む
-    let img = image::load_from_memory(data).unwrap();
+    let img = image::load_from_memory(data)?;
 
     // 軽量画像の作成
-    compress(&img, output_path, quality);
+    compress(&img, output_path, quality)
 }
 
 #[allow(dead_code)]
-pub fn get_aspect_ratio_from_path(path: &PathBuf) -> f32 {
+pub fn get_aspect_ratio_from_path(path: &PathBuf) -> Result<f32, CompressError> {
     // 画像を読み込む
-    let img = image::open(path).unwrap();
+    let img = image::open(path)?;
 
-    get_aspect_ratio(img.width(), img.height())
+    Ok(get_aspect_ratio(img.width(), img.height()))
 }
 
 #[allow(dead_code)]
-pub fn get_aspect_ratio_from_data(data: &Vec<u8>) -> f32 {
+pub fn get_aspect_ratio_from_data(data: &Vec<u8>) -> Result<f32, CompressError> {
     // 画像を読み込む
-    let img = image::load_from_memory(data).unwrap();
+    let img = image::load_from_memory(data)?;
 
-    get_aspect_ratio(img.width(), img.height())
+    Ok(get_aspect_ratio(img.width(), img.height()))
 }
 
 
-fn compress(img: &DynamicImage, output_path: &PathBuf, quality: f32) {
+fn compress(img: &DynamicImage, output_path: &PathBuf, quality: f32) -> Result<(), CompressError> {
     // 画像を読み込む
     let rgb_img = img.to_rgb8();
 
@@ -53,12 +54,14 @@ fn compress(img: &DynamicImage, output_path: &PathBuf, quality: f32) {
     comp.set_quality(quality as f32);
     comp.set_size(width, height);
 
-    let mut comp = comp.start_compress(Vec::new()).unwrap();
-    comp.write_scanlines(&pixels).unwrap();
-    let jpeg_data = comp.finish().unwrap();
+    let mut comp = comp.start_compress(Vec::new())?;
+    comp.write_scanlines(&pixels)?;
+    let jpeg_data = comp.finish()?;
 
     // 圧縮されたデータをファイルに保存
-    let file = File::create(output_path).unwrap();
+    let file = File::create(output_path)?;
     let mut writer = BufWriter::new(file);
-    std::io::copy(&mut &jpeg_data[..], &mut writer).unwrap();
+    std::io::copy(&mut &jpeg_data[..], &mut writer)?;
+
+    Ok(())
 }

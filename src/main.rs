@@ -2,6 +2,7 @@ use std::{collections::HashSet, fs, path::PathBuf};
 use clap::Parser;
 mod file;
 mod utilities;
+mod error;
 mod rgb_image;
 mod rgba_image;
 mod webp_image;
@@ -82,14 +83,18 @@ fn main() {
                         if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        webp_image::path2compress_lossless(&PathBuf::from(&filepath), &target);
+                        if let Err(e) = webp_image::path2compress_lossless(&PathBuf::from(&filepath), &target) {
+                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                        }
                     } else {
                         println!("rgba image: {:?}", filepath);
                         output_path.set_extension("png");
                         if fs::metadata(&output_path).is_ok() && !args.force {
                             continue;
                         }
-                        rgba_image::path2compress(&PathBuf::from(&filepath), &output_path);
+                        if let Err(e) = rgba_image::path2compress(&PathBuf::from(&filepath), &output_path) {
+                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                        }
                     }
                 } else if ext == "jpg" || ext == "jpeg" {
                     if args.webp {
@@ -98,14 +103,18 @@ fn main() {
                         if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        webp_image::path2compress_lossy(&PathBuf::from(&filepath), &target, args.quality);
+                        if let Err(e) = webp_image::path2compress_lossy(&PathBuf::from(&filepath), &target, args.quality) {
+                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                        }
                     } else {
                         println!("rgb image: {:?}", filepath);
                         output_path.set_extension("jpg");
                         if fs::metadata(&output_path).is_ok() && !args.force {
                             continue;
                         }
-                        rgb_image::path2compress(&PathBuf::from(&filepath), &output_path, args.quality);
+                        if let Err(e) = rgb_image::path2compress(&PathBuf::from(&filepath), &output_path, args.quality) {
+                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                        }
                     }
                 } else if video::is_match_extension(filepath.to_str().unwrap()) {
                     let codec = if args.hevc {
