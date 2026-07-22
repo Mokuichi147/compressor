@@ -7,6 +7,7 @@ mod rgb_image;
 mod rgba_image;
 mod webp_image;
 mod video;
+mod audio;
 
 #[derive(Parser)]
 struct AppArgs {
@@ -37,6 +38,22 @@ struct AppArgs {
     /// 動画の品質 (CRF)。低いほど高品質・大きいファイル。未指定時はコーデックごとの既定値
     #[clap(long)]
     crf: Option<u8>,
+
+    /// 音声を可逆圧縮する（既定: WAV/AIFF/FLACのみ可逆、MP3/AAC等は非可逆で再エンコード）
+    #[clap(long, conflicts_with = "audio_lossy")]
+    audio_lossless: bool,
+
+    /// 音声を非可逆圧縮する（既定: WAV/AIFF/FLACのみ可逆、MP3/AAC等は非可逆で再エンコード）
+    #[clap(long, conflicts_with = "audio_lossless")]
+    audio_lossy: bool,
+
+    /// 音声をOpusで出力する（既定はAAC）。非可逆圧縮時のみ有効
+    #[clap(long, conflicts_with = "audio_lossless")]
+    opus: bool,
+
+    /// 音声の非可逆圧縮時のビットレート
+    #[clap(long, default_value = "128k")]
+    audio_bitrate: String,
 }
 
 fn main() {
@@ -50,8 +67,10 @@ fn main() {
     std::fs::create_dir_all(&args.output_dir).unwrap();
     let root_dir = PathBuf::from(".");
 
-    // --webp で生成済みの出力先を記録し、同名衝突を回避する
-    let mut webp_outputs: HashSet<PathBuf> = HashSet::new();
+    // 生成済みの出力先を記録し、同名衝突を回避する。
+    // 出力の拡張子は入力より種類が少ない（jpeg→jpg, mov/mkv→mp4, mp3/ogg→m4a など）ため、
+    // 拡張子だけ違う同名ファイルは出力先が衝突しうる。
+    let mut used_outputs: HashSet<PathBuf> = HashSet::new();
 
     for input_file in input_files.iter() {
         let filepath = input_file.to_str().unwrap();
@@ -71,8 +90,7 @@ fn main() {
         };
 
         let relative_path = file::get_relative_path(&root_dir, &input_file);
-        let mut output_path = PathBuf::from(args.output_dir.clone());
-        output_path.push(relative_path);
+        let output_path = PathBuf::from(args.output_dir.clone()).join(relative_path);
 
         // 入力がサブディレクトリ配下の場合、出力先の親ディレクトリを作成する
         if let Some(parent) = output_path.parent() {
@@ -84,41 +102,41 @@ fn main() {
                 let ext = ext.to_string_lossy().to_lowercase();
                 if ext == "png" {
                     if args.webp {
-                        let target = file::webp_target(&output_path, &mut webp_outputs);
+                        let target = file::webp_target(&output_path, &mut used_outputs);
                         println!("png -> webp (lossless): {:?} -> {:?}", filepath, target);
                         if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        if let Err(e) = webp_image::path2compress_lossless(&PathBuf::from(&filepath), &target) {
+                        if let Err(e) = webp_image::path2compress_lossless(&filepath, &target) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     } else {
-                        println!("rgba image: {:?}", filepath);
-                        output_path.set_extension("png");
-                        if fs::metadata(&output_path).is_ok() && !args.force {
+                        let target = file::unique_target(&output_path, "png", &mut used_outputs);
+                        println!("rgba image: {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        if let Err(e) = rgba_image::path2compress(&PathBuf::from(&filepath), &output_path) {
+                        if let Err(e) = rgba_image::path2compress(&filepath, &target) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     }
                 } else if ext == "jpg" || ext == "jpeg" {
                     if args.webp {
-                        let target = file::webp_target(&output_path, &mut webp_outputs);
+                        let target = file::webp_target(&output_path, &mut used_outputs);
                         println!("jpg -> webp (lossy): {:?} -> {:?}", filepath, target);
                         if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        if let Err(e) = webp_image::path2compress_lossy(&PathBuf::from(&filepath), &target, args.quality) {
+                        if let Err(e) = webp_image::path2compress_lossy(&filepath, &target, args.quality) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     } else {
-                        println!("rgb image: {:?}", filepath);
-                        output_path.set_extension("jpg");
-                        if fs::metadata(&output_path).is_ok() && !args.force {
+                        let target = file::unique_target(&output_path, "jpg", &mut used_outputs);
+                        println!("rgb image: {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        if let Err(e) = rgb_image::path2compress(&PathBuf::from(&filepath), &output_path, args.quality) {
+                        if let Err(e) = rgb_image::path2compress(&filepath, &target, args.quality) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     }
@@ -128,12 +146,40 @@ fn main() {
                     } else {
                         video::VideoCodec::Av1
                     };
-                    println!("video ({}): {:?}", if args.hevc { "hevc" } else { "av1" }, filepath);
-                    output_path.set_extension("mp4");
-                    if fs::metadata(&output_path).is_ok() && !args.force {
+                    let target = file::unique_target(&output_path, "mp4", &mut used_outputs);
+                    println!("video ({}): {:?} -> {:?}", if args.hevc { "hevc" } else { "av1" }, filepath, target);
+                    if fs::metadata(&target).is_ok() && !args.force {
                         continue;
                     }
-                    video::path2compress(&filepath.to_str().unwrap(), output_path.to_str().unwrap(), codec, args.crf);
+                    if let Err(e) = video::path2compress(filepath.to_str().unwrap(), target.to_str().unwrap(), codec, args.crf) {
+                        eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                    }
+                } else if audio::is_match_extension(filepath.to_str().unwrap()) {
+                    let source_lossless = audio::is_lossless_source(filepath.to_str().unwrap());
+                    let use_lossless = if args.audio_lossless {
+                        true
+                    } else if args.audio_lossy {
+                        false
+                    } else {
+                        source_lossless
+                    };
+
+                    let codec = if use_lossless {
+                        audio::AudioCodec::Flac
+                    } else if args.opus {
+                        audio::AudioCodec::Opus
+                    } else {
+                        audio::AudioCodec::Aac
+                    };
+
+                    let target = file::unique_target(&output_path, codec.extension(), &mut used_outputs);
+                    println!("audio ({}): {:?} -> {:?}", codec.extension(), filepath, target);
+                    if fs::metadata(&target).is_ok() && !args.force {
+                        continue;
+                    }
+                    if let Err(e) = audio::path2compress(&filepath, &target, codec, &args.audio_bitrate) {
+                        eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                    }
                 }
             },
             None => continue,
