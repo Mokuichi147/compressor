@@ -9,6 +9,8 @@ pub enum CompressError {
     Io(std::io::Error),
     /// oxipngによるPNG最適化に失敗した。
     Png(oxipng::PngError),
+    /// ffmpegの実行に失敗した（未インストール、エンコードエラーなど）。
+    Ffmpeg(String),
 }
 
 impl fmt::Display for CompressError {
@@ -17,6 +19,7 @@ impl fmt::Display for CompressError {
             CompressError::Image(e) => write!(f, "image decode error: {e}"),
             CompressError::Io(e) => write!(f, "io error: {e}"),
             CompressError::Png(e) => write!(f, "png optimize error: {e}"),
+            CompressError::Ffmpeg(e) => write!(f, "ffmpeg error: {e}"),
         }
     }
 }
@@ -27,6 +30,7 @@ impl std::error::Error for CompressError {
             CompressError::Image(e) => Some(e),
             CompressError::Io(e) => Some(e),
             CompressError::Png(e) => Some(e),
+            CompressError::Ffmpeg(_) => None,
         }
     }
 }

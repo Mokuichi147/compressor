@@ -6,6 +6,7 @@
 - [x] png
 - [x] webp（`--webp` 指定時に jpg/jpeg/png から出力）
 - [x] mov, mp4, avi, mkv, webm
+- [x] wav, aiff, aif, flac, mp3, m4a, aac, ogg, wma
 - [ ] gif
 
 ## 使い方
@@ -28,6 +29,10 @@ Options:
   -w, --webp                        画像をWebPで出力する（jpg/jpeg→非可逆, png→可逆）
       --hevc                        動画をHEVC(H.265)で出力する（既定はAV1）
       --crf <CRF>                   動画の品質。低いほど高品質・大きいファイル（既定: AV1=40, HEVC=28）
+      --audio-lossless              音声を可逆圧縮する（既定: WAV/AIFF/FLACのみ可逆、MP3/AAC等は非可逆）
+      --audio-lossy                 音声を非可逆圧縮する（既定: WAV/AIFF/FLACのみ可逆、MP3/AAC等は非可逆）
+      --opus                        音声をOpusで出力する（既定はAAC。非可逆圧縮時のみ有効）
+      --audio-bitrate <BITRATE>     音声の非可逆圧縮時のビットレート [default: 128k]
   -h, --help                        Print help
 ```
 
@@ -44,6 +49,19 @@ Options:
 > CRF スケールはコーデックで異なります（AV1 の方が同じ数値でも高品質寄り）。そのため未指定時の既定値はコーデックごとに分けています（AV1=40, HEVC=28）。
 
 > AV1 はハードウェア再生対応が限られる機器があります（M1/M2 Mac、iPhone 15 Pro 未満、一部 Android/旧TV など）。これらでの再生互換を重視する場合は `--hevc` を使ってください。
+
+### 音声の圧縮
+動画と同様、音声も FFmpeg を使って圧縮します。
+
+- 既定では入力の種類に応じて自動で可逆/非可逆を選びます。
+  - **WAV / AIFF / FLAC**（可逆音源）→ **FLAC** で可逆圧縮
+  - **MP3 / AAC / M4A / OGG / WMA**（非可逆音源）→ **AAC** で非可逆再エンコード
+- `--audio-lossless` を付けると、入力の種類に関わらず常に FLAC（可逆）で出力します。
+- `--audio-lossy` を付けると、入力の種類に関わらず常に非可逆（既定は AAC）で出力します。
+- `--opus` を付けると、非可逆圧縮時のコーデックを AAC の代わりに Opus にします（同ビットレートで AAC より高音質になりやすい）。
+- `--audio-bitrate` で非可逆圧縮時のビットレートを調整できます（既定: `128k`）。FLAC 可逆圧縮時は無視されます。
+
+> 非可逆音源（MP3 など）を可逆圧縮しても失われた音質は復元されません。`--audio-lossless` はファイル形式を揃えたい場合などに使ってください。
 
 ## ライセンス
 Dual-licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).
