@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
-use std::sync::OnceLock;
 use crate::error::CompressError;
+use crate::utilities::is_ffmpeg_available;
 
 /// 可逆音源の拡張子。既定でFLACに可逆圧縮する。
 const LOSSLESS_EXTENSIONS: [&str; 4] = ["wav", "aiff", "aif", "flac"];
@@ -59,12 +59,6 @@ pub fn is_lossless_source(input_path: &str) -> bool {
         normalized_extension(input_path),
         Some(ext) if LOSSLESS_EXTENSIONS.contains(&ext.as_str())
     )
-}
-
-/// FFmpegが使えるかを判定する。プロセス起動を伴うため一度だけ実行して結果を使い回す。
-fn is_ffmpeg_available() -> bool {
-    static AVAILABLE: OnceLock<bool> = OnceLock::new();
-    *AVAILABLE.get_or_init(|| Command::new("ffmpeg").arg("-version").output().is_ok())
 }
 
 /// 音声ファイルを圧縮する関数

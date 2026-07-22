@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
 use std::time::Instant;
-use crate::utilities::get_aspect_ratio;
+use crate::error::CompressError;
+use crate::utilities::{get_aspect_ratio, is_ffmpeg_available};
 
 /// 動画圧縮の結果統計情報
 #[allow(dead_code)]
@@ -37,9 +38,14 @@ impl VideoCodec {
     }
 }
 
-pub fn path2compress(input_path: &str, output_path: &str, codec: VideoCodec, crf: Option<u8>) {
+pub fn path2compress(
+    input_path: &str,
+    output_path: &str,
+    codec: VideoCodec,
+    crf: Option<u8>,
+) -> Result<CompressionStats, CompressError> {
     let crf = crf.unwrap_or_else(|| codec.default_crf());
-    let _ = compress_video(input_path, output_path, codec, crf).unwrap();
+    compress_video(input_path, output_path, codec, crf)
 }
 
 pub fn is_match_extension(input_path: &str) -> bool {
@@ -75,7 +81,7 @@ pub fn is_match_extension(input_path: &str) -> bool {
 ///
 /// # 戻り値
 ///
-/// * `Result<CompressionStats, String>` - 成功時は圧縮統計情報、失敗時はエラーメッセージ
+/// * `Result<CompressionStats, CompressError>` - 成功時は圧縮統計情報、失敗時はエラー
 ///
 /// # 例
 ///
@@ -96,29 +102,29 @@ pub fn compress_video(
     output_path: &str,
     codec: VideoCodec,
     crf: u8,
-) -> Result<CompressionStats, String> {
+) -> Result<CompressionStats, CompressError> {
     // 開始時間を記録
     let start = Instant::now();
     let output_file_path = PathBuf::from(output_path);
 
     // 出力ディレクトリの存在チェックと作成
     if let Some(parent) = output_file_path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("出力ディレクトリの作成に失敗: {}", e))?;
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
         }
     }
-    
+
     // 元のファイルサイズを取得
-    let metadata = fs::metadata(input_path)
-        .map_err(|e| format!("メタデータの取得に失敗: {}", e))?;
+    let metadata = fs::metadata(input_path)?;
     let original_size = metadata.len();
-    
+
     // FFmpegの存在チェック
-    if !Command::new("ffmpeg").arg("-version").output().is_ok() {
-        return Err("FFmpegがインストールされていないか、PATHに含まれていません".to_string());
+    if !is_ffmpeg_available() {
+        return Err(CompressError::Ffmpeg(
+            "FFmpegがインストールされていないか、PATHに含まれていません".to_string(),
+        ));
     }
-    
+
     // 動画の解像度とアスペクト比を取得
     let probe_output = Command::new("ffprobe")
         .arg("-v")
@@ -131,7 +137,7 @@ pub fn compress_video(
         .arg("csv=p=0")
         .arg(input_path)
         .output()
-        .map_err(|e| format!("ffprobeの実行に失敗: {}", e))?;
+        .map_err(|e| CompressError::Ffmpeg(format!("ffprobeの実行に失敗: {e}")))?;
     
     let dimensions = String::from_utf8_lossy(&probe_output.stdout);
     let dimensions: Vec<&str> = dimensions.trim().split(',').collect();
@@ -184,15 +190,14 @@ pub fn compress_video(
         .arg("-y") // 確認なしで上書き
         .arg(output_file_path)
         .status()
-        .map_err(|e| format!("FFmpegの実行に失敗: {}", e))?;
-    
+        .map_err(|e| CompressError::Ffmpeg(format!("FFmpegの実行に失敗: {e}")))?;
+
     if !status.success() {
-        return Err(format!("FFmpegがエラーコードで終了: {}", status));
+        return Err(CompressError::Ffmpeg(format!("FFmpegがエラーコードで終了: {status}")));
     }
-    
+
     // 圧縮後のファイルサイズを取得
-    let compressed_metadata = fs::metadata(output_path)
-        .map_err(|e| format!("圧縮ファイルのメタデータ取得に失敗: {}", e))?;
+    let compressed_metadata = fs::metadata(output_path)?;
     let compressed_size = compressed_metadata.len();
     
     // 圧縮率の計算
@@ -208,4 +213,42 @@ pub fn compress_video(
         size_reduction_percent,
         duration_seconds,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CRFスケールはコーデック間で異なるため既定値を取り違えないこと
+    #[test]
+    fn default_crf_differs_per_codec() {
+        assert_eq!(VideoCodec::Av1.default_crf(), 40);
+        assert_eq!(VideoCodec::Hevc.default_crf(), 28);
+    }
+
+    /// 存在しないファイルは対象外として扱うこと
+    #[test]
+    fn missing_file_is_not_matched() {
+        assert!(!is_match_extension("/nonexistent/clip.mp4"));
+    }
+
+    /// 圧縮失敗時にpanicせずErrを返すこと（バッチ処理を中断させないため）
+    #[test]
+    fn returns_error_instead_of_panicking() {
+        let dir = std::env::temp_dir().join("compressor_video_test");
+        fs::create_dir_all(&dir).unwrap();
+        let broken = dir.join("broken.mp4");
+        fs::write(&broken, b"not a real video").unwrap();
+        let output = dir.join("out.mp4");
+
+        let result = path2compress(
+            broken.to_str().unwrap(),
+            output.to_str().unwrap(),
+            VideoCodec::Av1,
+            None,
+        );
+
+        assert!(result.is_err(), "壊れた動画でErrにならなかった");
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
