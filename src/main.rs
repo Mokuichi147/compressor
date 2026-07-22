@@ -48,7 +48,7 @@ struct AppArgs {
     audio_lossy: bool,
 
     /// 音声をOpusで出力する（既定はAAC）。非可逆圧縮時のみ有効
-    #[clap(long)]
+    #[clap(long, conflicts_with = "audio_lossless")]
     opus: bool,
 
     /// 音声の非可逆圧縮時のビットレート
@@ -69,6 +69,9 @@ fn main() {
 
     // --webp で生成済みの出力先を記録し、同名衝突を回避する
     let mut webp_outputs: HashSet<PathBuf> = HashSet::new();
+
+    // 音声も拡張子が集約される（例: mp3/aac/ogg → m4a）ため同様に記録する
+    let mut audio_outputs: HashSet<PathBuf> = HashSet::new();
 
     for input_file in input_files.iter() {
         let filepath = input_file.to_str().unwrap();
@@ -163,18 +166,12 @@ fn main() {
                         audio::AudioCodec::Aac
                     };
 
-                    let output_ext = match codec {
-                        audio::AudioCodec::Flac => "flac",
-                        audio::AudioCodec::Aac => "m4a",
-                        audio::AudioCodec::Opus => "opus",
-                    };
-
-                    println!("audio ({}): {:?}", output_ext, filepath);
-                    output_path.set_extension(output_ext);
-                    if fs::metadata(&output_path).is_ok() && !args.force {
+                    let target = file::unique_target(&output_path, codec.extension(), &mut audio_outputs);
+                    println!("audio ({}): {:?} -> {:?}", codec.extension(), filepath, target);
+                    if fs::metadata(&target).is_ok() && !args.force {
                         continue;
                     }
-                    if let Err(e) = audio::path2compress(&filepath, &output_path, codec, &args.audio_bitrate) {
+                    if let Err(e) = audio::path2compress(&filepath, &target, codec, &args.audio_bitrate) {
                         eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                     }
                 }

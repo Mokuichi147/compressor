@@ -1,6 +1,12 @@
 use std::path::Path;
 use std::process::Command;
+use std::sync::OnceLock;
 use crate::error::CompressError;
+
+/// 可逆音源の拡張子。既定でFLACに可逆圧縮する。
+const LOSSLESS_EXTENSIONS: [&str; 4] = ["wav", "aiff", "aif", "flac"];
+/// 非可逆音源の拡張子。既定で非可逆再エンコードする。
+const LOSSY_EXTENSIONS: [&str; 5] = ["mp3", "m4a", "aac", "ogg", "wma"];
 
 /// 音声の出力コーデック
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -13,36 +19,52 @@ pub enum AudioCodec {
     Opus,
 }
 
+impl AudioCodec {
+    /// コーデックに対応する出力拡張子
+    pub fn extension(self) -> &'static str {
+        match self {
+            AudioCodec::Flac => "flac",
+            AudioCodec::Aac => "m4a",
+            AudioCodec::Opus => "opus",
+        }
+    }
+}
+
+/// 拡張子を小文字で取り出す
+fn normalized_extension(input_path: &str) -> Option<String> {
+    Path::new(input_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+}
+
 /// 対応する音声拡張子かどうかを判定する
 pub fn is_match_extension(input_path: &str) -> bool {
-    let path = Path::new(input_path);
-
     // 入力ファイルの存在チェック
-    if !path.exists() {
+    if !Path::new(input_path).exists() {
         return false;
     }
 
-    let audio_extensions = [".wav", ".aiff", ".aif", ".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wma"];
-    let extension = path.extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| format!(".{}", ext.to_lowercase()));
-
-    match extension {
-        Some(ext) if audio_extensions.contains(&ext.as_str()) => true,
-        _ => false,
-    }
+    matches!(
+        normalized_extension(input_path),
+        Some(ext) if LOSSLESS_EXTENSIONS.contains(&ext.as_str())
+            || LOSSY_EXTENSIONS.contains(&ext.as_str())
+    )
 }
 
 /// 拡張子から、入力が可逆音源（WAV/AIFF/FLAC）かどうかを判定する。
 /// 可逆音源は既定でFLACに圧縮し、非可逆音源（MP3/AAC等）は既定で非可逆再エンコードする。
 pub fn is_lossless_source(input_path: &str) -> bool {
-    let path = Path::new(input_path);
-    let lossless_extensions = [".wav", ".aiff", ".aif", ".flac"];
-    let extension = path.extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| format!(".{}", ext.to_lowercase()));
+    matches!(
+        normalized_extension(input_path),
+        Some(ext) if LOSSLESS_EXTENSIONS.contains(&ext.as_str())
+    )
+}
 
-    matches!(extension, Some(ext) if lossless_extensions.contains(&ext.as_str()))
+/// FFmpegが使えるかを判定する。プロセス起動を伴うため一度だけ実行して結果を使い回す。
+fn is_ffmpeg_available() -> bool {
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| Command::new("ffmpeg").arg("-version").output().is_ok())
 }
 
 /// 音声ファイルを圧縮する関数
@@ -60,7 +82,7 @@ pub fn path2compress(
     bitrate: &str,
 ) -> Result<(), CompressError> {
     // FFmpegの存在チェック
-    if Command::new("ffmpeg").arg("-version").output().is_err() {
+    if !is_ffmpeg_available() {
         return Err(CompressError::Ffmpeg(
             "FFmpegがインストールされていないか、PATHに含まれていません".to_string(),
         ));
@@ -76,9 +98,6 @@ pub fn path2compress(
     let mut command = Command::new("ffmpeg");
     command.arg("-i").arg(input_path);
 
-    // カバーアート等の映像ストリームを除去し、音声のみを対象にする
-    command.arg("-vn");
-
     match codec {
         AudioCodec::Flac => {
             command.args(["-c:a", "flac", "-compression_level", "8"]);
@@ -88,6 +107,19 @@ pub fn path2compress(
         }
         AudioCodec::Opus => {
             command.args(["-c:a", "libopus", "-b:a", bitrate]);
+        }
+    }
+
+    match codec {
+        // FLAC/M4A はカバーアートを埋め込めるため、音声と併せて無変換で引き継ぐ。
+        // 字幕・データストリームは対象コンテナに入らずmuxに失敗しうるので映像だけを拾う。
+        AudioCodec::Flac | AudioCodec::Aac => {
+            command.args(["-map", "0:a", "-map", "0:v?", "-c:v", "copy"]);
+            command.args(["-disposition:v", "attached_pic"]);
+        }
+        // Opus（oggコンテナ）はカバーアートの埋め込みが素直に通らないため映像を落とす
+        AudioCodec::Opus => {
+            command.arg("-vn");
         }
     }
 
@@ -102,4 +134,42 @@ pub fn path2compress(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 可逆音源のみが可逆判定になること
+    #[test]
+    fn detects_lossless_sources() {
+        for ext in LOSSLESS_EXTENSIONS {
+            assert!(is_lossless_source(&format!("song.{ext}")), "{ext} が可逆と判定されない");
+        }
+        for ext in LOSSY_EXTENSIONS {
+            assert!(!is_lossless_source(&format!("song.{ext}")), "{ext} が可逆と判定された");
+        }
+    }
+
+    /// 大文字の拡張子でも判定できること
+    #[test]
+    fn extension_check_is_case_insensitive() {
+        assert!(is_lossless_source("song.WAV"));
+        assert!(!is_lossless_source("song.MP3"));
+    }
+
+    /// 拡張子がない・対象外の場合は可逆扱いしないこと
+    #[test]
+    fn non_audio_is_not_lossless() {
+        assert!(!is_lossless_source("song"));
+        assert!(!is_lossless_source("clip.mp4"));
+    }
+
+    /// コーデックごとの出力拡張子
+    #[test]
+    fn codec_extensions() {
+        assert_eq!(AudioCodec::Flac.extension(), "flac");
+        assert_eq!(AudioCodec::Aac.extension(), "m4a");
+        assert_eq!(AudioCodec::Opus.extension(), "opus");
+    }
 }
