@@ -1,6 +1,7 @@
 use std::{collections::HashSet, fs, path::{Component, PathBuf}};
 
-/// 指定されたディレクトリ内のファイルを再帰的に取得する
+/// 指定されたディレクトリ内のファイルを再帰的に取得する。
+/// 出力先が衝突した際にどちらが元の名前を取るかを実行ごとに変えないため、パス順にソートして返す。
 pub fn get_files(dir: &str) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = Vec::new();
     if let Ok(entries) = fs::read_dir(dir) {
@@ -17,6 +18,7 @@ pub fn get_files(dir: &str) -> Vec<PathBuf> {
             }
         }
     }
+    files.sort();
     files
 }
 
@@ -73,6 +75,26 @@ pub fn webp_target(base: &PathBuf, used: &mut HashSet<PathBuf>) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 走査結果が順序不定だと、衝突時にどちらが元の名前を取るか実行ごとに変わってしまう
+    #[test]
+    fn get_files_returns_sorted_paths() {
+        let dir = std::env::temp_dir().join("compressor_get_files_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        for name in ["z.png", "a.png", "m.png"] {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+        fs::write(dir.join("sub").join("b.png"), b"x").unwrap();
+
+        let files = get_files(dir.to_str().unwrap());
+        let mut sorted = files.clone();
+        sorted.sort();
+        assert_eq!(files, sorted, "get_files がソートされていない");
+        assert_eq!(files.len(), 4);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// 衝突がなければ拡張子を置き換えるだけ
     #[test]
