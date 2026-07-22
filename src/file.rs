@@ -20,9 +20,10 @@ pub fn get_files(dir: &str) -> Vec<PathBuf> {
     files
 }
 
-/// 絶対パスを取得する
-pub fn get_absolute_path(dir: &PathBuf) -> PathBuf {
-    fs::canonicalize(dir).unwrap()
+/// 絶対パスを取得する。
+/// 存在しないパスや権限不足の場合は panic せず `Err` を返す。
+pub fn get_absolute_path(dir: &PathBuf) -> std::io::Result<PathBuf> {
+    fs::canonicalize(dir)
 }
 
 /// `to` を `from` 起点の相対パスにする。
