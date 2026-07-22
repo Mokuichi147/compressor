@@ -101,7 +101,7 @@ fn main() {
                         if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        if let Err(e) = webp_image::path2compress_lossless(&PathBuf::from(&filepath), &target) {
+                        if let Err(e) = webp_image::path2compress_lossless(&filepath, &target) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     } else {
@@ -110,7 +110,7 @@ fn main() {
                         if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        if let Err(e) = rgba_image::path2compress(&PathBuf::from(&filepath), &target) {
+                        if let Err(e) = rgba_image::path2compress(&filepath, &target) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     }
@@ -121,7 +121,7 @@ fn main() {
                         if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        if let Err(e) = webp_image::path2compress_lossy(&PathBuf::from(&filepath), &target, args.quality) {
+                        if let Err(e) = webp_image::path2compress_lossy(&filepath, &target, args.quality) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     } else {
@@ -130,7 +130,7 @@ fn main() {
                         if fs::metadata(&target).is_ok() && !args.force {
                             continue;
                         }
-                        if let Err(e) = rgb_image::path2compress(&PathBuf::from(&filepath), &target, args.quality) {
+                        if let Err(e) = rgb_image::path2compress(&filepath, &target, args.quality) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     }
