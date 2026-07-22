@@ -62,7 +62,13 @@ fn main() {
             continue;
         }
 
-        let filepath = file::get_absolute_path(input_file);
+        let filepath = match file::get_absolute_path(input_file) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("圧縮に失敗しました: {:?}: {e}", input_file);
+                continue;
+            }
+        };
 
         let relative_path = file::get_relative_path(&root_dir, &input_file);
         let mut output_path = PathBuf::from(args.output_dir.clone());
