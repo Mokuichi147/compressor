@@ -6,6 +6,7 @@ mod error;
 mod rgb_image;
 mod rgba_image;
 mod webp_image;
+mod gif_image;
 mod video;
 mod audio;
 
@@ -129,6 +130,50 @@ fn main() {
                             continue;
                         }
                         if let Err(e) = rgb_image::path2compress(&filepath, &target, args.quality) {
+                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                        }
+                    }
+                } else if ext == "gif" {
+                    let is_animated = match gif_image::is_animated(&filepath) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                            continue;
+                        }
+                    };
+                    if is_animated {
+                        // アニメーションGIFは動画として扱う（READMEに従い --webp は対象外）
+                        let codec = if args.hevc {
+                            video::VideoCodec::Hevc
+                        } else {
+                            video::VideoCodec::Av1
+                        };
+                        let target = file::unique_target(&output_path, "mp4", &mut used_outputs);
+                        println!("gif ({}): {:?} -> {:?}", if args.hevc { "hevc" } else { "av1" }, filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
+                            continue;
+                        }
+                        if let Err(e) = video::path2compress(filepath.to_str().unwrap(), target.to_str().unwrap(), codec, args.crf) {
+                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                        }
+                    } else if args.webp {
+                        // 静止GIFは画像として扱う（可逆WebP）
+                        let target = file::webp_target(&output_path, &mut used_outputs);
+                        println!("gif -> webp (lossless): {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
+                            continue;
+                        }
+                        if let Err(e) = webp_image::path2compress_lossless(&filepath, &target) {
+                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
+                        }
+                    } else {
+                        // 静止GIFは画像として扱う（oxipngでPNG化）
+                        let target = file::unique_target(&output_path, "png", &mut used_outputs);
+                        println!("gif -> png: {:?} -> {:?}", filepath, target);
+                        if fs::metadata(&target).is_ok() && !args.force {
+                            continue;
+                        }
+                        if let Err(e) = gif_image::path2compress_png(&filepath, &target) {
                             eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
                         }
                     }
