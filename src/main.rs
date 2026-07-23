@@ -39,16 +39,8 @@ struct AppArgs {
     #[clap(long)]
     crf: Option<u8>,
 
-    /// 音声を可逆圧縮する（既定: WAV/AIFF/FLACのみ可逆、MP3/AAC等は非可逆で再エンコード）
-    #[clap(long, conflicts_with = "audio_lossy")]
-    audio_lossless: bool,
-
-    /// 音声を非可逆圧縮する（既定: WAV/AIFF/FLACのみ可逆、MP3/AAC等は非可逆で再エンコード）
-    #[clap(long, conflicts_with = "audio_lossless")]
-    audio_lossy: bool,
-
     /// 音声をOpusで出力する（既定はAAC）。非可逆圧縮時のみ有効
-    #[clap(long, conflicts_with = "audio_lossless")]
+    #[clap(long)]
     opus: bool,
 
     /// 音声の非可逆圧縮時のビットレート
@@ -156,15 +148,8 @@ fn main() {
                     }
                 } else if audio::is_match_extension(filepath.to_str().unwrap()) {
                     let source_lossless = audio::is_lossless_source(filepath.to_str().unwrap());
-                    let use_lossless = if args.audio_lossless {
-                        true
-                    } else if args.audio_lossy {
-                        false
-                    } else {
-                        source_lossless
-                    };
 
-                    let codec = if use_lossless {
+                    let codec = if source_lossless {
                         audio::AudioCodec::Flac
                     } else if args.opus {
                         audio::AudioCodec::Opus

@@ -29,8 +29,6 @@ Options:
   -w, --webp                        画像をWebPで出力する（jpg/jpeg→非可逆, png→可逆）
       --hevc                        動画をHEVC(H.265)で出力する（既定はAV1）
       --crf <CRF>                   動画の品質。低いほど高品質・大きいファイル（既定: AV1=40, HEVC=28）
-      --audio-lossless              音声を可逆圧縮する（既定: WAV/AIFF/FLACのみ可逆、MP3/AAC等は非可逆）
-      --audio-lossy                 音声を非可逆圧縮する（既定: WAV/AIFF/FLACのみ可逆、MP3/AAC等は非可逆）
       --opus                        音声をOpusで出力する（既定はAAC。非可逆圧縮時のみ有効）
       --audio-bitrate <BITRATE>     音声の非可逆圧縮時のビットレート [default: 128k]
   -h, --help                        Print help
@@ -58,17 +56,13 @@ Options:
 ### 音声の圧縮
 動画と同様、音声も FFmpeg を使って圧縮します。
 
-- 既定では入力の種類に応じて自動で可逆/非可逆を選びます。
+- 入力の種類に応じて自動で可逆/非可逆を選びます（画像の jpg/png と同様、拡張子だけで決まります）。
   - **WAV / AIFF / FLAC**（可逆音源）→ **FLAC** で可逆圧縮
   - **MP3 / AAC / M4A / OGG / WMA**（非可逆音源）→ **AAC** で非可逆再エンコード
-- `--audio-lossless` を付けると、入力の種類に関わらず常に FLAC（可逆）で出力します。
-- `--audio-lossy` を付けると、入力の種類に関わらず常に非可逆（既定は AAC）で出力します。
 - `--opus` を付けると、非可逆圧縮時のコーデックを AAC の代わりに Opus にします（同ビットレートで AAC より高音質になりやすい）。
 - `--audio-bitrate` で非可逆圧縮時のビットレートを調整できます（既定: `128k`）。FLAC 可逆圧縮時は無視されます。
 - カバーアート（アルバムアート）は FLAC / AAC 出力では引き継がれます。Opus 出力では取り除かれます。
 - 出力の拡張子が集約されるため、`song.mp3` と `song.m4a` のように同名で拡張子だけ違うファイルは出力先が衝突します。この場合、2 つ目以降は `song.mp3.m4a` のように元の拡張子を残した名前になります（`--webp` と同じ挙動）。
-
-> 非可逆音源（MP3 など）を可逆圧縮しても失われた音質は復元されません。`--audio-lossless` はファイル形式を揃えたい場合などに使ってください。
 
 ## ライセンス
 Dual-licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).
