@@ -7,7 +7,7 @@
 - [x] webp（`--webp` 指定時に jpg/jpeg/png から出力）
 - [x] mov, mp4, avi, mkv, webm
 - [x] wav, aiff, aif, flac, mp3, m4a, aac, ogg, wma
-- [ ] gif
+- [x] gif（静止GIFは画像として、アニメGIFは動画として圧縮）
 
 ## 使い方
 ### セットアップ
@@ -63,6 +63,12 @@ Options:
 - `--audio-bitrate` で非可逆圧縮時のビットレートを調整できます（既定: `128k`）。FLAC 可逆圧縮時は無視されます。
 - カバーアート（アルバムアート）は FLAC / AAC 出力では引き継がれます。Opus 出力では取り除かれます。
 - 出力の拡張子が集約されるため、`song.mp3` と `song.m4a` のように同名で拡張子だけ違うファイルは出力先が衝突します。この場合、2 つ目以降は `song.mp3.m4a` のように元の拡張子を残した名前になります（`--webp` と同じ挙動）。
+
+### GIFの圧縮
+GIFは内容に応じて自動で振り分けます。
+
+- **静止GIF**（1フレーム）は画像として扱い、既定では oxipng で最適化した `.png`、`--webp` 指定時は可逆WebPを出力します。
+- **アニメーションGIF**（2フレーム以上）は動画として扱い、`.mp4` に変換します（動画と同じ `--hevc` / `--crf` オプションが有効で、`--webp` の対象外。ffmpegが必要）。
 
 ## ライセンス
 Dual-licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).
