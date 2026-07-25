@@ -273,6 +273,7 @@ name = "compressor"
 version = "0.1.2"
 dependencies = [
  "clap",
+ "glob",
  "image",
  "mozjpeg",
  "oxipng",
