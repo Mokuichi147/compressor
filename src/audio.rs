@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::process::Command;
+use std::time::Instant;
 use crate::error::CompressError;
+use crate::stats::CompressionStats;
 use crate::utilities::{
     capped_bitrate, copy_modified_time, is_ffmpeg_available, probe_audio_stream,
     replace_with_original_if_larger, same_extension,
@@ -80,7 +82,9 @@ pub fn path2compress(
     output_path: &Path,
     codec: AudioCodec,
     bitrate: &str,
-) -> Result<(), CompressError> {
+) -> Result<CompressionStats, CompressError> {
+    let start = Instant::now();
+
     // FFmpegの存在チェック
     if !is_ffmpeg_available() {
         return Err(CompressError::Ffmpeg(
@@ -152,7 +156,9 @@ pub fn path2compress(
     }
 
     // 元ファイルで置き換えた場合も更新日時を揃えたいので、コピーの後に行う
-    copy_modified_time(input_path, output_path)
+    copy_modified_time(input_path, output_path)?;
+
+    CompressionStats::measure(input_path, output_path, start)
 }
 
 #[cfg(test)]

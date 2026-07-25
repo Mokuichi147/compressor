@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf, time::Instant};
 use clap::Parser;
 mod file;
 mod utilities;
@@ -10,6 +10,7 @@ mod gif_image;
 mod video;
 mod audio;
 mod job;
+mod stats;
 
 #[derive(Parser)]
 struct AppArgs {
@@ -64,6 +65,9 @@ impl AppArgs {
 }
 
 fn main() {
+    let started_at = Instant::now();
+    let mut totals = stats::Totals::default();
+
     let args = AppArgs::parse();
     let settings = args.settings();
 
@@ -126,8 +130,17 @@ fn main() {
         }
 
         println!("{}: {:?} -> {:?}", job.action.label(), job.source, job.target);
-        if let Err(e) = job.run() {
-            eprintln!("圧縮に失敗しました: {:?}: {e}", job.source);
+        match job.run() {
+            Ok(stats) => {
+                println!("  {}", stats.summary_line());
+                totals.add(&stats);
+            }
+            Err(e) => eprintln!("圧縮に失敗しました: {:?}: {e}", job.source),
         }
+    }
+
+    if let Some(summary) = totals.summary_line(started_at.elapsed().as_secs_f64()) {
+        println!();
+        println!("{summary}");
     }
 }

@@ -3,6 +3,7 @@ use std::process::Command;
 use std::fs;
 use std::time::Instant;
 use crate::error::CompressError;
+use crate::stats::CompressionStats;
 use crate::utilities::{
     capped_bitrate, copy_modified_time, get_aspect_ratio, is_ffmpeg_available,
     probe_audio_stream, replace_with_original_if_larger, same_extension,
@@ -10,19 +11,6 @@ use crate::utilities::{
 
 /// 動画に載せる音声の目標ビットレート。元がこれ以下ならそのままコピーする。
 const AUDIO_BITRATE: &str = "128k";
-
-/// 動画圧縮の結果統計情報
-#[allow(dead_code)]
-pub struct CompressionStats {
-    /// 元のファイルサイズ（バイト）
-    pub original_size: u64,
-    /// 圧縮後のファイルサイズ（バイト）
-    pub compressed_size: u64,
-    /// サイズ削減率（%）
-    pub size_reduction_percent: f64,
-    /// 圧縮にかかった時間（秒）
-    pub duration_seconds: f64,
-}
 
 /// 動画の出力コーデック
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -107,7 +95,7 @@ pub fn is_match_extension(input_path: &str) -> bool {
 ///     40,
 /// );
 /// match result {
-///     Ok(stats) => println!("圧縮完了: {}% 削減", stats.size_reduction_percent),
+///     Ok(stats) => println!("圧縮完了: {}% 削減", stats.size_reduction_percent()),
 ///     Err(e) => eprintln!("エラー: {}", e),
 /// }
 /// ```
@@ -127,10 +115,6 @@ pub fn compress_video(
             fs::create_dir_all(parent)?;
         }
     }
-
-    // 元のファイルサイズを取得
-    let metadata = fs::metadata(input_path)?;
-    let original_size = metadata.len();
 
     // FFmpegの存在チェック
     if !is_ffmpeg_available() {
@@ -244,25 +228,9 @@ pub fn compress_video(
     }
 
     // 元ファイルで置き換えた場合も更新日時を揃えたいので、コピーの後に行う
-    copy_modified_time(Path::new(input_path), Path::new(output_path))?;
+    copy_modified_time(Path::new(input_path), &output_file_path)?;
 
-    // 圧縮後のファイルサイズを取得
-    let compressed_metadata = fs::metadata(output_path)?;
-    let compressed_size = compressed_metadata.len();
-    
-    // 圧縮率の計算
-    let size_reduction_percent = 100.0 * (1.0 - (compressed_size as f64 / original_size as f64));
-    
-    // 処理時間の計算
-    let duration = start.elapsed();
-    let duration_seconds = duration.as_secs_f64();
-    
-    Ok(CompressionStats {
-        original_size,
-        compressed_size,
-        size_reduction_percent,
-        duration_seconds,
-    })
+    CompressionStats::measure(Path::new(input_path), &output_file_path, start)
 }
 
 #[cfg(test)]

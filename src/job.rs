@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::audio::{self, AudioCodec};
 use crate::error::CompressError;
+use crate::stats::CompressionStats;
 use crate::file;
 use crate::gif_image;
 use crate::rgb_image;
@@ -92,7 +93,7 @@ pub struct Job {
 }
 
 impl Job {
-    pub fn run(&self) -> Result<(), CompressError> {
+    pub fn run(&self) -> Result<CompressionStats, CompressError> {
         match &self.action {
             Action::RgbImage { quality } => {
                 rgb_image::path2compress(&self.source, &self.target, *quality)
@@ -110,8 +111,7 @@ impl Job {
                 &self.target.to_string_lossy(),
                 *codec,
                 *crf,
-            )
-            .map(|_| ()),
+            ),
             Action::Audio { codec, bitrate } => {
                 audio::path2compress(&self.source, &self.target, *codec, bitrate)
             }
