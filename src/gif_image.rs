@@ -1,10 +1,12 @@
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor};
 use std::path::Path;
+use std::time::Instant;
 use image::codecs::gif::GifDecoder;
 use image::{AnimationDecoder, ImageFormat};
 use oxipng::{optimize_from_memory, Options};
 use crate::error::CompressError;
+use crate::stats::CompressionStats;
 use crate::utilities::copy_modified_time;
 
 /// アニメーションGIF（2フレーム以上）かどうかを判定する。
@@ -17,7 +19,12 @@ pub fn is_animated(path: &Path) -> Result<bool, CompressError> {
 }
 
 /// 静止GIFの先頭フレームを oxipng で最適化した PNG として出力する。
-pub fn path2compress_png(path: &Path, output_path: &Path) -> Result<(), CompressError> {
+pub fn path2compress_png(
+    path: &Path,
+    output_path: &Path,
+) -> Result<CompressionStats, CompressError> {
+    let start = Instant::now();
+
     let img = image::open(path)?;
 
     // oxipng は PNG バイト列を入力に取るため、一度 PNG にエンコードしてから最適化する。
@@ -33,5 +40,7 @@ pub fn path2compress_png(path: &Path, output_path: &Path) -> Result<(), Compress
     std::io::copy(&mut &png_data[..], &mut writer)?;
     drop(writer);
 
-    copy_modified_time(path, output_path)
+    copy_modified_time(path, output_path)?;
+
+    CompressionStats::measure(path, output_path, start)
 }

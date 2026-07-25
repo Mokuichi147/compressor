@@ -2,8 +2,10 @@ use image::{DynamicImage, ImageDecoder};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
+use std::time::Instant;
 use webp::Encoder;
 use crate::error::CompressError;
+use crate::stats::CompressionStats;
 use crate::utilities::copy_modified_time;
 
 /// 画像を読み込み、Exif の Orientation をピクセルに反映して返す。
@@ -22,7 +24,13 @@ fn open_with_orientation(path: &Path) -> Result<DynamicImage, CompressError> {
 }
 
 /// jpg/jpeg 向け: 非可逆 WebP に圧縮する（quality は 0-100）。
-pub fn path2compress_lossy(path: &Path, output_path: &Path, quality: f32) -> Result<(), CompressError> {
+pub fn path2compress_lossy(
+    path: &Path,
+    output_path: &Path,
+    quality: f32,
+) -> Result<CompressionStats, CompressError> {
+    let start = Instant::now();
+
     let img = open_with_orientation(path)?;
     let rgb = img.to_rgb8();
 
@@ -30,11 +38,18 @@ pub fn path2compress_lossy(path: &Path, output_path: &Path, quality: f32) -> Res
     let data = encoder.encode(quality);
 
     write_file(output_path, &data)?;
-    copy_modified_time(path, output_path)
+    copy_modified_time(path, output_path)?;
+
+    CompressionStats::measure(path, output_path, start)
 }
 
 /// png 向け: 可逆 WebP に圧縮する（アルファ保持）。
-pub fn path2compress_lossless(path: &Path, output_path: &Path) -> Result<(), CompressError> {
+pub fn path2compress_lossless(
+    path: &Path,
+    output_path: &Path,
+) -> Result<CompressionStats, CompressError> {
+    let start = Instant::now();
+
     let img = open_with_orientation(path)?;
     let rgba = img.to_rgba8();
 
@@ -42,7 +57,9 @@ pub fn path2compress_lossless(path: &Path, output_path: &Path) -> Result<(), Com
     let data = encoder.encode_lossless();
 
     write_file(output_path, &data)?;
-    copy_modified_time(path, output_path)
+    copy_modified_time(path, output_path)?;
+
+    CompressionStats::measure(path, output_path, start)
 }
 
 fn write_file(output_path: &Path, data: &[u8]) -> Result<(), CompressError> {
