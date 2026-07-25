@@ -71,6 +71,12 @@ impl Action {
         }
     }
 
+    /// ffmpeg を起動する処理かどうか。
+    /// ffmpeg が無い環境で1件ずつ同じ理由で失敗させないため、実行前の判定に使う。
+    pub fn needs_ffmpeg(&self) -> bool {
+        matches!(self, Action::Video { .. } | Action::Audio { .. })
+    }
+
     /// ログに出す処理名
     pub fn label(&self) -> String {
         match self {
@@ -280,6 +286,28 @@ mod tests {
             let source = touch(&dir, name);
             let job = plan_for(&source, &settings).expect(name);
             assert_eq!(job.action.extension(), expected, "{name} がWebPの影響を受けた");
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// ffmpegを要する処理だけが needs_ffmpeg になること。
+    /// 取り違えると、ffmpegが無い環境で画像まで飛ばしてしまう
+    #[test]
+    fn only_ffmpeg_actions_need_ffmpeg() {
+        let dir = std::env::temp_dir().join("compressor_job_needs_ffmpeg");
+        let _ = fs::remove_dir_all(&dir);
+
+        for (name, expected) in [
+            ("a.mp4", true),
+            ("a.mp3", true),
+            ("a.wav", true),
+            ("a.jpg", false),
+            ("a.png", false),
+        ] {
+            let source = touch(&dir, name);
+            let job = plan_for(&source, &settings()).expect(name);
+            assert_eq!(job.action.needs_ffmpeg(), expected, "{name} の判定");
         }
 
         let _ = fs::remove_dir_all(&dir);

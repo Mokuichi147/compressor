@@ -1,4 +1,9 @@
-use std::{collections::HashSet, path::PathBuf, time::Instant};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    process::ExitCode,
+    time::Instant,
+};
 use clap::Parser;
 mod file;
 mod utilities;
@@ -49,6 +54,42 @@ struct AppArgs {
     /// 音声の非可逆圧縮時のビットレート
     #[clap(long, default_value = "128k")]
     audio_bitrate: String,
+
+    /// 実際には圧縮せず、どのファイルをどこにどの形式で出力するかだけを表示する
+    #[clap(long)]
+    dry_run: bool,
+}
+
+/// 失敗したファイルを集めておき、実行の最後にまとめて報告する。
+///
+/// バッチ処理を止めないために失敗しても続行するが、
+/// 大量のファイルを処理すると失敗のログが成功ログに埋もれてしまうため。
+#[derive(Default)]
+struct Failures {
+    messages: Vec<String>,
+}
+
+impl Failures {
+    fn record(&mut self, path: &Path, error: impl std::fmt::Display) {
+        let message = format!("{:?}: {error}", path);
+        eprintln!("圧縮に失敗しました: {message}");
+        self.messages.push(message);
+    }
+
+    /// 失敗の一覧を表示する。1件でもあれば true を返す（終了コードに使う）。
+    fn report(&self) -> bool {
+        if self.messages.is_empty() {
+            return false;
+        }
+
+        eprintln!();
+        eprintln!("{} 件が失敗しました:", self.messages.len());
+        for message in &self.messages {
+            eprintln!("  {message}");
+        }
+
+        true
+    }
 }
 
 impl AppArgs {
@@ -64,12 +105,13 @@ impl AppArgs {
     }
 }
 
-fn main() {
+fn main() -> ExitCode {
     let started_at = Instant::now();
     let mut totals = stats::Totals::default();
 
     let args = AppArgs::parse();
     let settings = args.settings();
+    let mut failures = Failures::default();
 
     let mut input_files = args.input_file.clone().unwrap_or_default();
     if input_files.is_empty() {
@@ -78,6 +120,14 @@ fn main() {
 
     std::fs::create_dir_all(&args.output_dir).unwrap();
     let root_dir = PathBuf::from(".");
+
+    // ffmpeg が無いと動画・音声は1件ずつ同じ理由で失敗する。
+    // ファイルごとに同じメッセージを並べても読みにくいので、最初に1回だけ報告して以降はスキップする。
+    let ffmpeg_available = utilities::is_ffmpeg_available();
+    if !ffmpeg_available {
+        eprintln!("FFmpegが見つかりません。動画・音声・アニメーションGIFはスキップします。");
+    }
+    let mut skipped_without_ffmpeg = 0usize;
 
     // 生成済みの出力先を記録し、同名衝突を回避する。
     // 出力の拡張子は入力より種類が少ない（jpeg→jpg, mov/mkv→mp4, mp3/ogg→m4a など）ため、
@@ -96,7 +146,7 @@ fn main() {
         let source = match file::get_absolute_path(input_file) {
             Ok(path) => path,
             Err(e) => {
-                eprintln!("圧縮に失敗しました: {:?}: {e}", input_file);
+                failures.record(input_file, e);
                 continue;
             }
         };
@@ -109,10 +159,15 @@ fn main() {
             // 対象外の形式
             Ok(None) => continue,
             Err(e) => {
-                eprintln!("圧縮に失敗しました: {:?}: {e}", source);
+                failures.record(&source, e);
                 continue;
             }
         };
+
+        if !ffmpeg_available && job.action.needs_ffmpeg() {
+            skipped_without_ffmpeg += 1;
+            continue;
+        }
 
         // 実行するかどうかを決めてからログを出す。
         // 逆にすると、スキップしたファイルも圧縮したかのように表示されてしまう。
@@ -121,26 +176,68 @@ fn main() {
             continue;
         }
 
+        println!("{}: {:?} -> {:?}", job.action.label(), job.source, job.target);
+        if args.dry_run {
+            continue;
+        }
+
         // 入力がサブディレクトリ配下の場合、出力先の親ディレクトリを作成する
         if let Some(parent) = job.target.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
-                eprintln!("圧縮に失敗しました: {:?}: {e}", job.target);
+                failures.record(&job.target, e);
                 continue;
             }
         }
 
-        println!("{}: {:?} -> {:?}", job.action.label(), job.source, job.target);
         match job.run() {
             Ok(stats) => {
                 println!("  {}", stats.summary_line());
                 totals.add(&stats);
             }
-            Err(e) => eprintln!("圧縮に失敗しました: {:?}: {e}", job.source),
+            Err(e) => failures.record(&job.source, e),
         }
     }
 
     if let Some(summary) = totals.summary_line(started_at.elapsed().as_secs_f64()) {
         println!();
         println!("{summary}");
+    }
+
+    let failed = failures.report();
+
+    if skipped_without_ffmpeg > 0 {
+        eprintln!();
+        eprintln!("FFmpegが無いため {skipped_without_ffmpeg} 件をスキップしました");
+    }
+
+    // スキップした分も「頼まれたのに圧縮していない」ため、成功として返さない
+    if failed || skipped_without_ffmpeg > 0 {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 失敗が無ければ報告せず、終了コードも成功のままにすること
+    #[test]
+    fn no_report_without_failures() {
+        assert!(!Failures::default().report());
+    }
+
+    /// 失敗を記録したら報告し、非ゼロ終了を促すこと
+    #[test]
+    fn reports_recorded_failures() {
+        let mut failures = Failures::default();
+        failures.record(Path::new("a.jpg"), "壊れています");
+        failures.record(Path::new("b.mp4"), "ffmpegが失敗");
+
+        assert_eq!(failures.messages.len(), 2);
+        assert!(failures.messages[0].contains("a.jpg"));
+        assert!(failures.messages[0].contains("壊れています"));
+        assert!(failures.report());
     }
 }
