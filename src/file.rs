@@ -68,11 +68,6 @@ pub fn unique_target(base: &PathBuf, ext: &str, used: &mut HashSet<PathBuf>) -> 
     candidate
 }
 
-/// `--webp` 出力先のパスを決める。[`unique_target`] の webp 固定版。
-pub fn webp_target(base: &PathBuf, used: &mut HashSet<PathBuf>) -> PathBuf {
-    unique_target(base, "webp", used)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,12 +133,12 @@ mod tests {
         assert_eq!(third, PathBuf::from("compress/song.mp3-2.m4a"));
     }
 
-    /// webp_target の委譲後も従来の例（photo.jpg と photo.png）どおりに動くこと
+    /// webp 出力でも従来の例（photo.jpg と photo.png）どおりに動くこと
     #[test]
-    fn webp_target_keeps_previous_behavior() {
+    fn webp_targets_avoid_collision() {
         let mut used = HashSet::new();
-        let jpg = webp_target(&PathBuf::from("compress/photo.jpg"), &mut used);
-        let png = webp_target(&PathBuf::from("compress/photo.png"), &mut used);
+        let jpg = unique_target(&PathBuf::from("compress/photo.jpg"), "webp", &mut used);
+        let png = unique_target(&PathBuf::from("compress/photo.png"), "webp", &mut used);
         assert_eq!(jpg, PathBuf::from("compress/photo.webp"));
         assert_eq!(png, PathBuf::from("compress/photo.png.webp"));
     }

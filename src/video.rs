@@ -28,6 +28,14 @@ pub enum VideoCodec {
 }
 
 impl VideoCodec {
+    /// ログ表示に使うコーデック名
+    pub fn name(self) -> &'static str {
+        match self {
+            VideoCodec::Av1 => "av1",
+            VideoCodec::Hevc => "hevc",
+        }
+    }
+
     /// 未指定時に使う、コーデックごとの既定 CRF。
     /// CRF スケールはコーデック間で異なるため値を分ける。
     fn default_crf(self) -> u8 {
