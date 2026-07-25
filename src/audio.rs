@@ -11,7 +11,8 @@ use crate::utilities::{
 /// 可逆音源の拡張子。既定でFLACに可逆圧縮する。
 const LOSSLESS_EXTENSIONS: [&str; 4] = ["wav", "aiff", "aif", "flac"];
 /// 非可逆音源の拡張子。既定で非可逆再エンコードする。
-const LOSSY_EXTENSIONS: [&str; 5] = ["mp3", "m4a", "aac", "ogg", "wma"];
+/// m4b はオーディオブック、mka は Matroska の音声のみのコンテナ。
+const LOSSY_EXTENSIONS: [&str; 8] = ["mp3", "m4a", "m4b", "aac", "ogg", "opus", "wma", "mka"];
 
 /// 音声の出力コーデック
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -188,6 +189,37 @@ mod tests {
     fn non_audio_is_not_lossless() {
         assert!(!is_lossless_source("song"));
         assert!(!is_lossless_source("clip.mp4"));
+    }
+
+    /// 対応拡張子すべてが音声として判定されること
+    #[test]
+    fn matches_all_audio_extensions() {
+        let dir = std::env::temp_dir().join("compressor_audio_extensions");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        for ext in LOSSLESS_EXTENSIONS.iter().chain(LOSSY_EXTENSIONS.iter()) {
+            let path = dir.join(format!("song.{ext}"));
+            std::fs::write(&path, b"").unwrap();
+            assert!(is_match_extension(path.to_str().unwrap()), "{ext} が音声と判定されない");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 出力形式である opus を入力としても受け付けること（対応が非対称にならないように）
+    #[test]
+    fn opus_is_accepted_as_input() {
+        assert!(LOSSY_EXTENSIONS.contains(&"opus"));
+        assert!(!is_lossless_source("song.opus"));
+    }
+
+    /// 可逆と非可逆の拡張子が重複していないこと
+    #[test]
+    fn extension_lists_do_not_overlap() {
+        for ext in LOSSY_EXTENSIONS {
+            assert!(!LOSSLESS_EXTENSIONS.contains(&ext), "{ext} が両方のリストにある");
+        }
     }
 
     /// コーデックごとの出力拡張子

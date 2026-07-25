@@ -26,6 +26,36 @@ pub fn path2compress(path: &Path, output_path: &Path) -> Result<CompressionStats
     CompressionStats::measure(path, output_path, start)
 }
 
+/// PNG以外の可逆画像（GIF / TIFF / BMP）をPNGに変換し、oxipng で最適化して出力する。
+///
+/// これらは元のバイト列を直接 oxipng に渡せないため、一度デコードして PNG にし直す。
+/// 出力形式が変わるので、[`write_smaller`] による「元より大きければ元を出す」保護は使えない。
+pub fn decode2compress_png(
+    path: &Path,
+    output_path: &Path,
+) -> Result<CompressionStats, CompressError> {
+    let start = Instant::now();
+
+    let img = image::open(path)?;
+
+    // oxipng は PNG バイト列を入力に取るため、一度 PNG にエンコードしてから最適化する。
+    let mut png_buf = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png_buf), image::ImageFormat::Png)?;
+
+    let mut options = Options::from_preset(2);
+    options.force = true;
+    let png_data = optimize_from_memory(&png_buf, &options)?;
+
+    let file = File::create(output_path)?;
+    let mut writer = BufWriter::new(file);
+    std::io::copy(&mut &png_data[..], &mut writer)?;
+    drop(writer);
+
+    copy_modified_time(path, output_path)?;
+
+    CompressionStats::measure(path, output_path, start)
+}
+
 #[allow(dead_code)]
 pub fn data2compress(data: &[u8], output_path: &Path) -> Result<(), CompressError> {
     let img = image::load_from_memory(data)?;
