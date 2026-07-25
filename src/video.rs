@@ -12,6 +12,16 @@ use crate::utilities::{
 /// 動画に載せる音声の目標ビットレート。元がこれ以下ならそのままコピーする。
 const AUDIO_BITRATE: &str = "128k";
 
+/// 対応する動画の拡張子。
+///
+/// `.ts`（MPEG-TS）はあえて含めていない。TypeScript のソースと拡張子が衝突し、
+/// フォルダを再帰的に走査するこのツールでは誤検出が実害になるため。
+/// MPEG-TS は `.m2ts` / `.mts` で拾える。
+const VIDEO_EXTENSIONS: [&str; 14] = [
+    "mov", "mp4", "m4v", "avi", "mkv", "webm", "wmv", "flv", "mpg", "mpeg", "m2ts", "mts", "3gp",
+    "3g2",
+];
+
 /// 動画の出力コーデック
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum VideoCodec {
@@ -58,14 +68,13 @@ pub fn is_match_extension(input_path: &str) -> bool {
         return false;
     }
 
-    let video_extensions = [".mov", ".mp4", ".avi", ".mkv", ".webm"];
     let extension = path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| format!(".{}", ext.to_lowercase()));
-    
+        .map(|ext| ext.to_lowercase());
+
     match extension {
-        Some(ext) if video_extensions.contains(&ext.as_str()) => true,
-        _ => false,
+        Some(ext) => VIDEO_EXTENSIONS.contains(&ext.as_str()),
+        None => false,
     }
 }
 
@@ -248,6 +257,59 @@ mod tests {
     #[test]
     fn missing_file_is_not_matched() {
         assert!(!is_match_extension("/nonexistent/clip.mp4"));
+    }
+
+    /// 対応拡張子すべてが（大文字でも）動画として判定されること
+    #[test]
+    fn matches_all_video_extensions() {
+        let dir = std::env::temp_dir().join("compressor_video_extensions");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        for ext in VIDEO_EXTENSIONS {
+            let path = dir.join(format!("clip.{ext}"));
+            fs::write(&path, b"").unwrap();
+            assert!(is_match_extension(path.to_str().unwrap()), "{ext} が動画と判定されない");
+
+            let upper = dir.join(format!("upper.{}", ext.to_uppercase()));
+            fs::write(&upper, b"").unwrap();
+            assert!(
+                is_match_extension(upper.to_str().unwrap()),
+                "{ext} が大文字だと判定されない"
+            );
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// TypeScript のソースと衝突するため .ts は対象にしないこと
+    #[test]
+    fn typescript_source_is_not_matched() {
+        let dir = std::env::temp_dir().join("compressor_video_ts");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let path = dir.join("index.ts");
+        fs::write(&path, b"export const x = 1;").unwrap();
+        assert!(!is_match_extension(path.to_str().unwrap()));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 音声のみのコンテナを動画として拾わないこと
+    #[test]
+    fn audio_only_containers_are_not_matched() {
+        let dir = std::env::temp_dir().join("compressor_video_audio_only");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        for name in ["song.m4a", "song.mka", "song.mp3"] {
+            let path = dir.join(name);
+            fs::write(&path, b"").unwrap();
+            assert!(!is_match_extension(path.to_str().unwrap()), "{name} が動画と判定された");
+        }
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// 圧縮失敗時にpanicせずErrを返すこと（バッチ処理を中断させないため）

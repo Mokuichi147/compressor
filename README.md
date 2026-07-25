@@ -4,10 +4,15 @@
 ## サポートするファイル形式
 - [x] jpg, jpeg
 - [x] png
-- [x] webp（`--webp` 指定時に jpg/jpeg/png から出力）
-- [x] mov, mp4, avi, mkv, webm
-- [x] wav, aiff, aif, flac, mp3, m4a, aac, ogg, wma
+- [x] tiff, tif, bmp（PNG として出力）
+- [x] webp（`--webp` 指定時に jpg/jpeg/png/tiff/bmp から出力）
+- [x] mov, mp4, m4v, avi, mkv, webm, wmv, flv, mpg, mpeg, m2ts, mts, 3gp, 3g2
+- [x] wav, aiff, aif, flac, mp3, m4a, m4b, aac, ogg, opus, wma, mka
 - [x] gif（静止GIFは画像として、アニメGIFは動画として圧縮）
+
+> `.ts`（MPEG-TS）はあえて対象外にしています。TypeScript のソースと拡張子が衝突し、フォルダを再帰的に走査するこのツールでは誤検出が実害になるためです。MPEG-TS は `.m2ts` / `.mts` で扱えます。
+
+> tiff/bmp は可逆のまま PNG 化します。YCbCr 形式の TIFF はデコーダが対応していないため処理できません（そのファイルだけエラーになり、他のファイルの処理は続きます）。
 
 ## 使い方
 ### セットアップ

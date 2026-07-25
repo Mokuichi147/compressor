@@ -53,8 +53,8 @@ pub enum Action {
     WebpLossy { quality: f32 },
     /// 可逆WebPに変換する
     WebpLossless,
-    /// 静止GIFをPNG化する
-    GifToPng,
+    /// GIF・TIFF・BMP をデコードし直してPNG化する
+    DecodeToPng,
     Video { codec: VideoCodec, crf: Option<u8> },
     Audio { codec: AudioCodec, bitrate: String },
 }
@@ -64,7 +64,7 @@ impl Action {
     pub fn extension(&self) -> &'static str {
         match self {
             Action::RgbImage { .. } => "jpg",
-            Action::RgbaImage | Action::GifToPng => "png",
+            Action::RgbaImage | Action::DecodeToPng => "png",
             Action::WebpLossy { .. } | Action::WebpLossless => "webp",
             Action::Video { .. } => "mp4",
             Action::Audio { codec, .. } => codec.extension(),
@@ -78,7 +78,7 @@ impl Action {
             Action::RgbaImage => "rgba image".to_string(),
             Action::WebpLossy { .. } => "webp (lossy)".to_string(),
             Action::WebpLossless => "webp (lossless)".to_string(),
-            Action::GifToPng => "gif -> png".to_string(),
+            Action::DecodeToPng => "image -> png".to_string(),
             Action::Video { codec, .. } => format!("video ({})", codec.name()),
             Action::Audio { codec, .. } => format!("audio ({})", codec.extension()),
         }
@@ -105,7 +105,7 @@ impl Job {
             Action::WebpLossless => {
                 webp_image::path2compress_lossless(&self.source, &self.target)
             }
-            Action::GifToPng => gif_image::path2compress_png(&self.source, &self.target),
+            Action::DecodeToPng => rgba_image::decode2compress_png(&self.source, &self.target),
             Action::Video { codec, crf } => video::path2compress(
                 &self.source.to_string_lossy(),
                 &self.target.to_string_lossy(),
@@ -177,7 +177,15 @@ fn decide_action(source: &Path, settings: &Settings) -> Result<Option<Action>, C
             } else if settings.webp {
                 Action::WebpLossless
             } else {
-                Action::GifToPng
+                Action::DecodeToPng
+            }
+        }
+        // 可逆だが圧縮が弱い（もしくは無圧縮の）画像。GIFと同様にPNG化する
+        "tiff" | "tif" | "bmp" => {
+            if settings.webp {
+                Action::WebpLossless
+            } else {
+                Action::DecodeToPng
             }
         }
         _ => {
@@ -286,6 +294,32 @@ mod tests {
         for name in ["a.txt", "a.pdf", "README"] {
             let source = touch(&dir, name);
             assert!(plan_for(&source, &settings()).is_none(), "{name} がジョブになった");
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// tiff / bmp は GIF と同じくPNG化し、--webp なら可逆WebPになること
+    #[test]
+    fn tiff_and_bmp_become_png() {
+        let dir = std::env::temp_dir().join("compressor_job_tiff_bmp");
+        let _ = fs::remove_dir_all(&dir);
+
+        let mut webp = settings();
+        webp.webp = true;
+
+        for name in ["a.tiff", "a.tif", "a.bmp"] {
+            let source = touch(&dir, name);
+            assert_eq!(
+                plan_for(&source, &settings()).expect(name).action.extension(),
+                "png",
+                "{name} がPNGにならない"
+            );
+            assert_eq!(
+                plan_for(&source, &webp).expect(name).action.extension(),
+                "webp",
+                "{name} が可逆WebPにならない"
+            );
         }
 
         let _ = fs::remove_dir_all(&dir);
