@@ -1,3 +1,5 @@
+use image::imageops::FilterType;
+use image::DynamicImage;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -203,9 +205,120 @@ pub fn copy_modified_time(input_path: &Path, output_path: &Path) -> Result<(), C
     Ok(())
 }
 
+/// 長辺が `max_long_side` を超える場合の縮小後サイズを返す。超えていなければ `None`。
+///
+/// 縦横どちらが長くても効くよう長辺で判定する。アスペクト比で分岐すると
+/// 縦向きに撮影した動画（4Kの縦動画など）が素通りしてしまうため。
+/// 拡大はしない。動画エンコーダが偶数の解像度を要求するため偶数に丸める。
+pub fn scaled_size(width: u32, height: u32, max_long_side: u32) -> Option<(u32, u32)> {
+    if max_long_side == 0 || width == 0 || height == 0 {
+        return None;
+    }
+
+    let long_side = width.max(height);
+    if long_side <= max_long_side {
+        return None;
+    }
+
+    let ratio = max_long_side as f64 / long_side as f64;
+    let scaled = |value: u32| {
+        let pixels = (value as f64 * ratio).round() as u32;
+        // 偶数に切り下げる。0にはしない
+        (pixels & !1).max(2)
+    };
+
+    Some((scaled(width), scaled(height)))
+}
+
+/// 長辺が上限を超えていれば縮小する。上限が未指定なら何もしない。
+///
+/// 画像には動画のような偶数の制約がないため、[`scaled_size`] ではなく
+/// `max × max` に収める形で縮小する（アスペクト比は `resize` 側が保つ）。
+pub fn resize_to_fit(image: DynamicImage, max_long_side: Option<u32>) -> DynamicImage {
+    let Some(max) = max_long_side else {
+        return image;
+    };
+
+    if max == 0 || image.width().max(image.height()) <= max {
+        return image;
+    }
+
+    image.resize(max, max, FilterType::Lanczos3)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::GenericImageView;
+
+    /// 上限以下なら縮小しないこと
+    #[test]
+    fn keeps_size_within_limit() {
+        assert_eq!(scaled_size(1920, 1080, 1920), None);
+        assert_eq!(scaled_size(640, 480, 1920), None);
+    }
+
+    /// 横長は幅、縦長は高さが長辺として扱われること。
+    /// アスペクト比で分岐していた頃は縦向きの4K動画が素通りしていた
+    #[test]
+    fn scales_by_long_side_in_both_orientations() {
+        assert_eq!(scaled_size(3840, 2160, 1920), Some((1920, 1080)));
+        assert_eq!(scaled_size(2160, 3840, 1920), Some((1080, 1920)));
+    }
+
+    /// 16:9 以外のアスペクト比でも効くこと
+    #[test]
+    fn scales_non_16_9() {
+        assert_eq!(scaled_size(4000, 3000, 2000), Some((2000, 1500)));
+        assert_eq!(scaled_size(3000, 3000, 1000), Some((1000, 1000)));
+    }
+
+    /// 動画エンコーダ向けに偶数へ丸めること
+    #[test]
+    fn rounds_down_to_even() {
+        let (width, height) = scaled_size(1999, 1001, 1000).unwrap();
+        assert_eq!(width % 2, 0, "幅が奇数: {width}");
+        assert_eq!(height % 2, 0, "高さが奇数: {height}");
+    }
+
+    /// 極端に小さい上限でも 0 にはしないこと
+    #[test]
+    fn never_scales_to_zero() {
+        let (width, height) = scaled_size(4000, 10, 1).unwrap();
+        assert!(width >= 2 && height >= 2, "{width}x{height}");
+    }
+
+    /// 0 は「上限なし」として扱うこと
+    #[test]
+    fn zero_means_no_limit() {
+        assert_eq!(scaled_size(3840, 2160, 0), None);
+    }
+
+    fn image(width: u32, height: u32) -> DynamicImage {
+        DynamicImage::ImageRgba8(image::RgbaImage::new(width, height))
+    }
+
+    /// 上限が未指定・0・上限以下のときは元の画像をそのまま返すこと
+    #[test]
+    fn resize_keeps_image_when_not_needed() {
+        assert_eq!(resize_to_fit(image(800, 600), None).dimensions(), (800, 600));
+        assert_eq!(resize_to_fit(image(800, 600), Some(0)).dimensions(), (800, 600));
+        assert_eq!(resize_to_fit(image(800, 600), Some(800)).dimensions(), (800, 600));
+    }
+
+    /// 長辺が上限ちょうどになり、アスペクト比が保たれること
+    #[test]
+    fn resize_fits_long_side() {
+        assert_eq!(resize_to_fit(image(3000, 2000), Some(1000)).dimensions(), (1000, 667));
+        assert_eq!(resize_to_fit(image(2000, 3000), Some(1000)).dimensions(), (667, 1000));
+    }
+
+    /// 上限より小さい画像を拡大しないこと
+    #[test]
+    fn resize_never_upscales() {
+        assert_eq!(resize_to_fit(image(100, 50), Some(4000)).dimensions(), (100, 50));
+    }
+
 
     /// ffmpeg と同じ単位（k=1000）で解釈すること
     #[test]

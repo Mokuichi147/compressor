@@ -5,8 +5,8 @@ use std::time::Instant;
 use crate::error::CompressError;
 use crate::stats::CompressionStats;
 use crate::utilities::{
-    capped_bitrate, copy_modified_time, get_aspect_ratio, is_ffmpeg_available,
-    probe_audio_stream, replace_with_original_if_larger, same_extension,
+    capped_bitrate, copy_modified_time, is_ffmpeg_available, probe_audio_stream,
+    replace_with_original_if_larger, same_extension, scaled_size,
 };
 
 /// 動画に載せる音声の目標ビットレート。元がこれ以下ならそのままコピーする。
@@ -55,9 +55,10 @@ pub fn path2compress(
     output_path: &str,
     codec: VideoCodec,
     crf: Option<u8>,
+    max_long_side: u32,
 ) -> Result<CompressionStats, CompressError> {
     let crf = crf.unwrap_or_else(|| codec.default_crf());
-    compress_video(input_path, output_path, codec, crf)
+    compress_video(input_path, output_path, codec, crf, max_long_side)
 }
 
 pub fn is_match_extension(input_path: &str) -> bool {
@@ -89,6 +90,7 @@ pub fn is_match_extension(input_path: &str) -> bool {
 /// * `output_path` - 圧縮後の出力先ファイルパス
 /// * `codec` - 出力コーデック（AV1 もしくは HEVC）
 /// * `crf` - Constant Rate Factor（低いほど高画質・大きいファイル）
+/// * `max_long_side` - 長辺の上限（ピクセル）。超える場合は縮小する。0 なら縮小しない
 ///
 /// # 戻り値
 ///
@@ -102,6 +104,7 @@ pub fn is_match_extension(input_path: &str) -> bool {
 ///     "/path/to/output.mp4",
 ///     VideoCodec::Av1,
 ///     40,
+///     1920,
 /// );
 /// match result {
 ///     Ok(stats) => println!("圧縮完了: {}% 削減", stats.size_reduction_percent()),
@@ -113,6 +116,7 @@ pub fn compress_video(
     output_path: &str,
     codec: VideoCodec,
     crf: u8,
+    max_long_side: u32,
 ) -> Result<CompressionStats, CompressError> {
     // 開始時間を記録
     let start = Instant::now();
@@ -148,25 +152,16 @@ pub fn compress_video(
     
     let dimensions = String::from_utf8_lossy(&probe_output.stdout);
     let dimensions: Vec<&str> = dimensions.trim().split(',').collect();
-    
-    let mut resize_filter = String::new();
-    
-    // 解像度情報が正しく取得できた場合
+
+    // 縮小後のサイズ。解像度が取れない場合や上限以下の場合は縮小しない
+    let mut scale_to = None;
     if dimensions.len() == 2 {
         if let (Ok(width), Ok(height)) = (dimensions[0].parse::<u32>(), dimensions[1].parse::<u32>()) {
-            // アスペクト比を計算
-            let aspect_ratio = get_aspect_ratio(width, height);
-
-            // 16:9のアスペクト比は約1.778
-            let is_16_9 = aspect_ratio >= 1.775 && aspect_ratio <= 1.781;
-            
-            // 16:9かつフルHD（1920x1080）を超える場合
-            if is_16_9 && (width > 1920 || height > 1080) {
-                resize_filter = "-vf scale=1920:-2".to_string();
-            }
+            scale_to = scaled_size(width, height, max_long_side);
         }
     }
-    
+
+
     // FFmpegコマンドの実行
     let crf = crf.to_string();
     let mut command = Command::new("ffmpeg");
@@ -206,9 +201,8 @@ pub fn compress_video(
     }
 
     // リサイズフィルターを追加（必要な場合）
-    if !resize_filter.is_empty() {
-        let filter_parts: Vec<&str> = resize_filter.split_whitespace().collect();
-        command.args(filter_parts);
+    if let Some((width, height)) = scale_to {
+        command.args(&["-vf", &format!("scale={width}:{height}")]);
     }
 
     // 撮影日時・GPS・カメラ情報を引き継ぐ。
@@ -326,6 +320,7 @@ mod tests {
             output.to_str().unwrap(),
             VideoCodec::Av1,
             None,
+            1920,
         );
 
         assert!(result.is_err(), "壊れた動画でErrにならなかった");

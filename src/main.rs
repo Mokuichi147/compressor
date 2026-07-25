@@ -55,6 +55,11 @@ struct AppArgs {
     #[clap(long, default_value = "128k")]
     audio_bitrate: String,
 
+    /// 長辺の上限（ピクセル）。超える画像・動画を縮小する。0 で縮小しない。
+    /// 未指定の場合、動画のみ 1920 に収める（画像は縮小しない）
+    #[clap(long)]
+    max_long_side: Option<u32>,
+
     /// 実際には圧縮せず、どのファイルをどこにどの形式で出力するかだけを表示する
     #[clap(long)]
     dry_run: bool,
@@ -101,6 +106,7 @@ impl AppArgs {
             crf: self.crf,
             opus: self.opus,
             audio_bitrate: self.audio_bitrate.clone(),
+            max_long_side: self.max_long_side,
         }
     }
 }

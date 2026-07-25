@@ -19,7 +19,13 @@ pub struct Settings {
     pub crf: Option<u8>,
     pub opus: bool,
     pub audio_bitrate: String,
+    /// 長辺の上限。`None` は「画像は縮小せず、動画だけ既定値に収める」を意味する
+    pub max_long_side: Option<u32>,
 }
+
+/// `--max-long-side` 未指定時に動画へ適用する長辺の上限。
+/// 従来から動画だけは暗黙に 1920 へ収めていたため、その挙動を保つ。
+const DEFAULT_VIDEO_MAX_LONG_SIDE: u32 = 1920;
 
 impl Settings {
     /// 動画の出力コーデック
@@ -29,6 +35,11 @@ impl Settings {
         } else {
             VideoCodec::Av1
         }
+    }
+
+    /// 動画に適用する長辺の上限。未指定でも動画だけは既定値に収める。
+    fn video_max_long_side(&self) -> u32 {
+        self.max_long_side.unwrap_or(DEFAULT_VIDEO_MAX_LONG_SIDE)
     }
 
     /// 音声の出力コーデック。可逆音源はFLAC、非可逆音源はAAC（`--opus` 指定時はOpus）。
@@ -46,16 +57,16 @@ impl Settings {
 /// 入力ファイルに対して実行する圧縮処理。
 pub enum Action {
     /// jpg/jpeg を mozjpeg で再圧縮する
-    RgbImage { quality: f32 },
+    RgbImage { quality: f32, max_long_side: Option<u32> },
     /// png を oxipng で最適化する
-    RgbaImage,
+    RgbaImage { max_long_side: Option<u32> },
     /// 非可逆WebPに変換する
-    WebpLossy { quality: f32 },
+    WebpLossy { quality: f32, max_long_side: Option<u32> },
     /// 可逆WebPに変換する
-    WebpLossless,
+    WebpLossless { max_long_side: Option<u32> },
     /// GIF・TIFF・BMP をデコードし直してPNG化する
-    DecodeToPng,
-    Video { codec: VideoCodec, crf: Option<u8> },
+    DecodeToPng { max_long_side: Option<u32> },
+    Video { codec: VideoCodec, crf: Option<u8>, max_long_side: u32 },
     Audio { codec: AudioCodec, bitrate: String },
 }
 
@@ -64,8 +75,8 @@ impl Action {
     pub fn extension(&self) -> &'static str {
         match self {
             Action::RgbImage { .. } => "jpg",
-            Action::RgbaImage | Action::DecodeToPng => "png",
-            Action::WebpLossy { .. } | Action::WebpLossless => "webp",
+            Action::RgbaImage { .. } | Action::DecodeToPng { .. } => "png",
+            Action::WebpLossy { .. } | Action::WebpLossless { .. } => "webp",
             Action::Video { .. } => "mp4",
             Action::Audio { codec, .. } => codec.extension(),
         }
@@ -81,10 +92,10 @@ impl Action {
     pub fn label(&self) -> String {
         match self {
             Action::RgbImage { .. } => "rgb image".to_string(),
-            Action::RgbaImage => "rgba image".to_string(),
+            Action::RgbaImage { .. } => "rgba image".to_string(),
             Action::WebpLossy { .. } => "webp (lossy)".to_string(),
-            Action::WebpLossless => "webp (lossless)".to_string(),
-            Action::DecodeToPng => "image -> png".to_string(),
+            Action::WebpLossless { .. } => "webp (lossless)".to_string(),
+            Action::DecodeToPng { .. } => "image -> png".to_string(),
             Action::Video { codec, .. } => format!("video ({})", codec.name()),
             Action::Audio { codec, .. } => format!("audio ({})", codec.extension()),
         }
@@ -101,22 +112,30 @@ pub struct Job {
 impl Job {
     pub fn run(&self) -> Result<CompressionStats, CompressError> {
         match &self.action {
-            Action::RgbImage { quality } => {
-                rgb_image::path2compress(&self.source, &self.target, *quality)
+            Action::RgbImage { quality, max_long_side } => {
+                rgb_image::path2compress(&self.source, &self.target, *quality, *max_long_side)
             }
-            Action::RgbaImage => rgba_image::path2compress(&self.source, &self.target),
-            Action::WebpLossy { quality } => {
-                webp_image::path2compress_lossy(&self.source, &self.target, *quality)
+            Action::RgbaImage { max_long_side } => {
+                rgba_image::path2compress(&self.source, &self.target, *max_long_side)
             }
-            Action::WebpLossless => {
-                webp_image::path2compress_lossless(&self.source, &self.target)
+            Action::WebpLossy { quality, max_long_side } => webp_image::path2compress_lossy(
+                &self.source,
+                &self.target,
+                *quality,
+                *max_long_side,
+            ),
+            Action::WebpLossless { max_long_side } => {
+                webp_image::path2compress_lossless(&self.source, &self.target, *max_long_side)
             }
-            Action::DecodeToPng => rgba_image::decode2compress_png(&self.source, &self.target),
-            Action::Video { codec, crf } => video::path2compress(
+            Action::DecodeToPng { max_long_side } => {
+                rgba_image::decode2compress_png(&self.source, &self.target, *max_long_side)
+            }
+            Action::Video { codec, crf, max_long_side } => video::path2compress(
                 &self.source.to_string_lossy(),
                 &self.target.to_string_lossy(),
                 *codec,
                 *crf,
+                *max_long_side,
             ),
             Action::Audio { codec, bitrate } => {
                 audio::path2compress(&self.source, &self.target, *codec, bitrate)
@@ -157,19 +176,21 @@ fn decide_action(source: &Path, settings: &Settings) -> Result<Option<Action>, C
     let action = match ext.as_str() {
         "png" => {
             if settings.webp {
-                Action::WebpLossless
+                Action::WebpLossless { max_long_side: settings.max_long_side }
             } else {
-                Action::RgbaImage
+                Action::RgbaImage { max_long_side: settings.max_long_side }
             }
         }
         "jpg" | "jpeg" => {
             if settings.webp {
                 Action::WebpLossy {
                     quality: settings.quality,
+                    max_long_side: settings.max_long_side,
                 }
             } else {
                 Action::RgbImage {
                     quality: settings.quality,
+                    max_long_side: settings.max_long_side,
                 }
             }
         }
@@ -179,19 +200,20 @@ fn decide_action(source: &Path, settings: &Settings) -> Result<Option<Action>, C
                 Action::Video {
                     codec: settings.video_codec(),
                     crf: settings.crf,
+                    max_long_side: settings.video_max_long_side(),
                 }
             } else if settings.webp {
-                Action::WebpLossless
+                Action::WebpLossless { max_long_side: settings.max_long_side }
             } else {
-                Action::DecodeToPng
+                Action::DecodeToPng { max_long_side: settings.max_long_side }
             }
         }
         // 可逆だが圧縮が弱い（もしくは無圧縮の）画像。GIFと同様にPNG化する
         "tiff" | "tif" | "bmp" => {
             if settings.webp {
-                Action::WebpLossless
+                Action::WebpLossless { max_long_side: settings.max_long_side }
             } else {
-                Action::DecodeToPng
+                Action::DecodeToPng { max_long_side: settings.max_long_side }
             }
         }
         _ => {
@@ -200,6 +222,7 @@ fn decide_action(source: &Path, settings: &Settings) -> Result<Option<Action>, C
                 Action::Video {
                     codec: settings.video_codec(),
                     crf: settings.crf,
+                    max_long_side: settings.video_max_long_side(),
                 }
             } else if audio::is_match_extension(&path) {
                 Action::Audio {
@@ -228,6 +251,7 @@ mod tests {
             crf: None,
             opus: false,
             audio_bitrate: "128k".to_string(),
+            max_long_side: None,
         }
     }
 

@@ -6,7 +6,7 @@ use std::time::Instant;
 use webp::Encoder;
 use crate::error::CompressError;
 use crate::stats::CompressionStats;
-use crate::utilities::copy_modified_time;
+use crate::utilities::{copy_modified_time, resize_to_fit};
 
 /// 画像を読み込み、Exif の Orientation をピクセルに反映して返す。
 ///
@@ -28,10 +28,11 @@ pub fn path2compress_lossy(
     path: &Path,
     output_path: &Path,
     quality: f32,
+    max_long_side: Option<u32>,
 ) -> Result<CompressionStats, CompressError> {
     let start = Instant::now();
 
-    let img = open_with_orientation(path)?;
+    let img = resize_to_fit(open_with_orientation(path)?, max_long_side);
     let rgb = img.to_rgb8();
 
     let encoder = Encoder::from_rgb(rgb.as_raw(), rgb.width(), rgb.height());
@@ -47,10 +48,11 @@ pub fn path2compress_lossy(
 pub fn path2compress_lossless(
     path: &Path,
     output_path: &Path,
+    max_long_side: Option<u32>,
 ) -> Result<CompressionStats, CompressError> {
     let start = Instant::now();
 
-    let img = open_with_orientation(path)?;
+    let img = resize_to_fit(open_with_orientation(path)?, max_long_side);
     let rgba = img.to_rgba8();
 
     let encoder = Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height());
