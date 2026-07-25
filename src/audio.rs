@@ -1,7 +1,10 @@
 use std::path::Path;
 use std::process::Command;
 use crate::error::CompressError;
-use crate::utilities::is_ffmpeg_available;
+use crate::utilities::{
+    capped_bitrate, is_ffmpeg_available, probe_audio_stream, replace_with_original_if_larger,
+    same_extension,
+};
 
 /// 可逆音源の拡張子。既定でFLACに可逆圧縮する。
 const LOSSLESS_EXTENSIONS: [&str; 4] = ["wav", "aiff", "aif", "flac"];
@@ -69,6 +72,9 @@ pub fn is_lossless_source(input_path: &str) -> bool {
 /// * `output_path` - 圧縮後の出力先ファイルパス
 /// * `codec` - 出力コーデック（FLAC/AAC/Opus）
 /// * `bitrate` - 非可逆圧縮時のビットレート（例: "128k"）。FLACでは無視される
+///
+/// 非可逆圧縮では、指定ビットレートを元の音声のビットレートで頭打ちにする。
+/// 64kbps の音源を 128k で再エンコードしても音質は戻らず、サイズだけが増えるため。
 pub fn path2compress(
     input_path: &Path,
     output_path: &Path,
@@ -89,6 +95,15 @@ pub fn path2compress(
         }
     }
 
+    // 非可逆圧縮では元のビットレートを上限にする。可逆圧縮（FLAC）では使わないため取得もしない。
+    let bitrate = match codec {
+        AudioCodec::Flac => bitrate.to_string(),
+        AudioCodec::Aac | AudioCodec::Opus => {
+            let source_bps = probe_audio_stream(input_path).and_then(|info| info.bitrate_bps);
+            capped_bitrate(bitrate, source_bps)
+        }
+    };
+
     let mut command = Command::new("ffmpeg");
     command.arg("-i").arg(input_path);
 
@@ -97,10 +112,10 @@ pub fn path2compress(
             command.args(["-c:a", "flac", "-compression_level", "8"]);
         }
         AudioCodec::Aac => {
-            command.args(["-c:a", "aac", "-b:a", bitrate]);
+            command.args(["-c:a", "aac", "-b:a", &bitrate]);
         }
         AudioCodec::Opus => {
-            command.args(["-c:a", "libopus", "-b:a", bitrate]);
+            command.args(["-c:a", "libopus", "-b:a", &bitrate]);
         }
     }
 
@@ -125,6 +140,12 @@ pub fn path2compress(
 
     if !status.success() {
         return Err(CompressError::Ffmpeg(format!("FFmpegがエラーコードで終了: {status}")));
+    }
+
+    // 既に十分圧縮された音源を再エンコードすると、サイズが増えたうえに音質だけ落ちることがある。
+    // 形式が変わらない場合（flac→flac など）に限り、元のほうが小さければ元を出力する。
+    if same_extension(input_path, output_path) {
+        replace_with_original_if_larger(input_path, output_path)?;
     }
 
     Ok(())
