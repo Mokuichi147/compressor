@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf};
 use clap::Parser;
 mod file;
 mod utilities;
@@ -9,13 +9,14 @@ mod webp_image;
 mod gif_image;
 mod video;
 mod audio;
+mod job;
 
 #[derive(Parser)]
 struct AppArgs {
     /// 圧縮済みファイルの保存先
     #[clap(short, long, default_value = "compress")]
     output_dir: String,
-    
+
     /// 圧縮したいファイル（入力のない場合は全て）
     #[clap(short, long, num_args = 1..)]
     input_file: Option<Vec<PathBuf>>,
@@ -49,11 +50,25 @@ struct AppArgs {
     audio_bitrate: String,
 }
 
+impl AppArgs {
+    fn settings(&self) -> job::Settings {
+        job::Settings {
+            quality: self.quality,
+            webp: self.webp,
+            hevc: self.hevc,
+            crf: self.crf,
+            opus: self.opus,
+            audio_bitrate: self.audio_bitrate.clone(),
+        }
+    }
+}
+
 fn main() {
     let args = AppArgs::parse();
+    let settings = args.settings();
 
-    let mut input_files = args.input_file.unwrap_or_default();
-    if input_files.len() == 0 {
+    let mut input_files = args.input_file.clone().unwrap_or_default();
+    if input_files.is_empty() {
         input_files = file::get_files(".");
     }
 
@@ -66,15 +81,15 @@ fn main() {
     let mut used_outputs: HashSet<PathBuf> = HashSet::new();
 
     for input_file in input_files.iter() {
-        let filepath = input_file.to_str().unwrap();
-        let extension = input_file.extension();
-
         // 圧縮済みのファイルはスキップする
-        if filepath.contains(format!("/{}/", &args.output_dir).as_str()) {
+        if input_file
+            .to_string_lossy()
+            .contains(format!("/{}/", &args.output_dir).as_str())
+        {
             continue;
         }
 
-        let filepath = match file::get_absolute_path(input_file) {
+        let source = match file::get_absolute_path(input_file) {
             Ok(path) => path,
             Err(e) => {
                 eprintln!("圧縮に失敗しました: {:?}: {e}", input_file);
@@ -82,137 +97,37 @@ fn main() {
             }
         };
 
-        let relative_path = file::get_relative_path(&root_dir, &input_file);
-        let output_path = PathBuf::from(args.output_dir.clone()).join(relative_path);
+        let relative_path = file::get_relative_path(&root_dir, input_file);
+        let output_base = PathBuf::from(&args.output_dir).join(relative_path);
 
-        // 入力がサブディレクトリ配下の場合、出力先の親ディレクトリを作成する
-        if let Some(parent) = output_path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
+        let job = match job::plan(&source, &output_base, &settings, &mut used_outputs) {
+            Ok(Some(job)) => job,
+            // 対象外の形式
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!("圧縮に失敗しました: {:?}: {e}", source);
+                continue;
+            }
+        };
+
+        // 実行するかどうかを決めてからログを出す。
+        // 逆にすると、スキップしたファイルも圧縮したかのように表示されてしまう。
+        if job.target.exists() && !args.force {
+            println!("skip: {:?}（既に存在。--force で再圧縮）", job.target);
+            continue;
         }
 
-        match extension {
-            Some(ext) => {
-                let ext = ext.to_string_lossy().to_lowercase();
-                if ext == "png" {
-                    if args.webp {
-                        let target = file::webp_target(&output_path, &mut used_outputs);
-                        println!("png -> webp (lossless): {:?} -> {:?}", filepath, target);
-                        if fs::metadata(&target).is_ok() && !args.force {
-                            continue;
-                        }
-                        if let Err(e) = webp_image::path2compress_lossless(&filepath, &target) {
-                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                        }
-                    } else {
-                        let target = file::unique_target(&output_path, "png", &mut used_outputs);
-                        println!("rgba image: {:?} -> {:?}", filepath, target);
-                        if fs::metadata(&target).is_ok() && !args.force {
-                            continue;
-                        }
-                        if let Err(e) = rgba_image::path2compress(&filepath, &target) {
-                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                        }
-                    }
-                } else if ext == "jpg" || ext == "jpeg" {
-                    if args.webp {
-                        let target = file::webp_target(&output_path, &mut used_outputs);
-                        println!("jpg -> webp (lossy): {:?} -> {:?}", filepath, target);
-                        if fs::metadata(&target).is_ok() && !args.force {
-                            continue;
-                        }
-                        if let Err(e) = webp_image::path2compress_lossy(&filepath, &target, args.quality) {
-                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                        }
-                    } else {
-                        let target = file::unique_target(&output_path, "jpg", &mut used_outputs);
-                        println!("rgb image: {:?} -> {:?}", filepath, target);
-                        if fs::metadata(&target).is_ok() && !args.force {
-                            continue;
-                        }
-                        if let Err(e) = rgb_image::path2compress(&filepath, &target, args.quality) {
-                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                        }
-                    }
-                } else if ext == "gif" {
-                    let is_animated = match gif_image::is_animated(&filepath) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                            continue;
-                        }
-                    };
-                    if is_animated {
-                        // アニメーションGIFは動画として扱う（READMEに従い --webp は対象外）
-                        let codec = if args.hevc {
-                            video::VideoCodec::Hevc
-                        } else {
-                            video::VideoCodec::Av1
-                        };
-                        let target = file::unique_target(&output_path, "mp4", &mut used_outputs);
-                        println!("gif ({}): {:?} -> {:?}", if args.hevc { "hevc" } else { "av1" }, filepath, target);
-                        if fs::metadata(&target).is_ok() && !args.force {
-                            continue;
-                        }
-                        if let Err(e) = video::path2compress(filepath.to_str().unwrap(), target.to_str().unwrap(), codec, args.crf) {
-                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                        }
-                    } else if args.webp {
-                        // 静止GIFは画像として扱う（可逆WebP）
-                        let target = file::webp_target(&output_path, &mut used_outputs);
-                        println!("gif -> webp (lossless): {:?} -> {:?}", filepath, target);
-                        if fs::metadata(&target).is_ok() && !args.force {
-                            continue;
-                        }
-                        if let Err(e) = webp_image::path2compress_lossless(&filepath, &target) {
-                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                        }
-                    } else {
-                        // 静止GIFは画像として扱う（oxipngでPNG化）
-                        let target = file::unique_target(&output_path, "png", &mut used_outputs);
-                        println!("gif -> png: {:?} -> {:?}", filepath, target);
-                        if fs::metadata(&target).is_ok() && !args.force {
-                            continue;
-                        }
-                        if let Err(e) = gif_image::path2compress_png(&filepath, &target) {
-                            eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                        }
-                    }
-                } else if video::is_match_extension(filepath.to_str().unwrap()) {
-                    let codec = if args.hevc {
-                        video::VideoCodec::Hevc
-                    } else {
-                        video::VideoCodec::Av1
-                    };
-                    let target = file::unique_target(&output_path, "mp4", &mut used_outputs);
-                    println!("video ({}): {:?} -> {:?}", if args.hevc { "hevc" } else { "av1" }, filepath, target);
-                    if fs::metadata(&target).is_ok() && !args.force {
-                        continue;
-                    }
-                    if let Err(e) = video::path2compress(filepath.to_str().unwrap(), target.to_str().unwrap(), codec, args.crf) {
-                        eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                    }
-                } else if audio::is_match_extension(filepath.to_str().unwrap()) {
-                    let source_lossless = audio::is_lossless_source(filepath.to_str().unwrap());
+        // 入力がサブディレクトリ配下の場合、出力先の親ディレクトリを作成する
+        if let Some(parent) = job.target.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                eprintln!("圧縮に失敗しました: {:?}: {e}", job.target);
+                continue;
+            }
+        }
 
-                    let codec = if source_lossless {
-                        audio::AudioCodec::Flac
-                    } else if args.opus {
-                        audio::AudioCodec::Opus
-                    } else {
-                        audio::AudioCodec::Aac
-                    };
-
-                    let target = file::unique_target(&output_path, codec.extension(), &mut used_outputs);
-                    println!("audio ({}): {:?} -> {:?}", codec.extension(), filepath, target);
-                    if fs::metadata(&target).is_ok() && !args.force {
-                        continue;
-                    }
-                    if let Err(e) = audio::path2compress(&filepath, &target, codec, &args.audio_bitrate) {
-                        eprintln!("圧縮に失敗しました: {:?}: {e}", filepath);
-                    }
-                }
-            },
-            None => continue,
+        println!("{}: {:?} -> {:?}", job.action.label(), job.source, job.target);
+        if let Err(e) = job.run() {
+            eprintln!("圧縮に失敗しました: {:?}: {e}", job.source);
         }
     }
 }
