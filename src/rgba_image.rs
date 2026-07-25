@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 use crate::error::CompressError;
-use crate::utilities::{get_aspect_ratio, write_smaller};
+use crate::utilities::{copy_modified_time, get_aspect_ratio, write_smaller};
 
 pub fn path2compress(path: &Path, output_path: &Path) -> Result<(), CompressError> {
     // 元データはサイズ比較に使う
@@ -16,7 +16,8 @@ pub fn path2compress(path: &Path, output_path: &Path) -> Result<(), CompressErro
 
     let optimized = optimize_from_memory(&original, &options)?;
 
-    write_smaller(output_path, &optimized, &original)
+    write_smaller(output_path, &optimized, &original)?;
+    copy_modified_time(path, output_path)
 }
 
 #[allow(dead_code)]

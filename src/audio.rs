@@ -2,8 +2,8 @@ use std::path::Path;
 use std::process::Command;
 use crate::error::CompressError;
 use crate::utilities::{
-    capped_bitrate, is_ffmpeg_available, probe_audio_stream, replace_with_original_if_larger,
-    same_extension,
+    capped_bitrate, copy_modified_time, is_ffmpeg_available, probe_audio_stream,
+    replace_with_original_if_larger, same_extension,
 };
 
 /// 可逆音源の拡張子。既定でFLACに可逆圧縮する。
@@ -107,6 +107,9 @@ pub fn path2compress(
     let mut command = Command::new("ffmpeg");
     command.arg("-i").arg(input_path);
 
+    // タグ（アーティスト・アルバムなど）を明示的に引き継ぐ
+    command.args(["-map_metadata", "0"]);
+
     match codec {
         AudioCodec::Flac => {
             command.args(["-c:a", "flac", "-compression_level", "8"]);
@@ -148,7 +151,8 @@ pub fn path2compress(
         replace_with_original_if_larger(input_path, output_path)?;
     }
 
-    Ok(())
+    // 元ファイルで置き換えた場合も更新日時を揃えたいので、コピーの後に行う
+    copy_modified_time(input_path, output_path)
 }
 
 #[cfg(test)]

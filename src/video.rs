@@ -4,8 +4,8 @@ use std::fs;
 use std::time::Instant;
 use crate::error::CompressError;
 use crate::utilities::{
-    capped_bitrate, get_aspect_ratio, is_ffmpeg_available, probe_audio_stream,
-    replace_with_original_if_larger, same_extension,
+    capped_bitrate, copy_modified_time, get_aspect_ratio, is_ffmpeg_available,
+    probe_audio_stream, replace_with_original_if_larger, same_extension,
 };
 
 /// 動画に載せる音声の目標ビットレート。元がこれ以下ならそのままコピーする。
@@ -218,8 +218,16 @@ pub fn compress_video(
         command.args(filter_parts);
     }
 
+    // 撮影日時・GPS・カメラ情報を引き継ぐ。
+    // use_metadata_tags を付けないと com.apple.quicktime.* が落ち、
+    // iPhone で撮った動画から撮影日時と位置情報が失われる。
+    // （コンテナのブランドは isom のまま。ffprobe に qt と出るのはコピーされたタグの側）
+    command.args(&["-map_metadata", "0"]);
+
     let status = command
-        .args(&["-movflags", "+faststart"]) // ストリーミング向けに moov を先頭へ
+        // faststart はストリーミング向けに moov を先頭へ移す。
+        // -movflags は後勝ちで上書きされるため、まとめて1回で指定する。
+        .args(&["-movflags", "+faststart+use_metadata_tags"])
         .arg("-y") // 確認なしで上書き
         .arg(&output_file_path)
         .status()
@@ -234,6 +242,9 @@ pub fn compress_video(
     if same_extension(Path::new(input_path), &output_file_path) {
         replace_with_original_if_larger(Path::new(input_path), &output_file_path)?;
     }
+
+    // 元ファイルで置き換えた場合も更新日時を揃えたいので、コピーの後に行う
+    copy_modified_time(Path::new(input_path), Path::new(output_path))?;
 
     // 圧縮後のファイルサイズを取得
     let compressed_metadata = fs::metadata(output_path)?;

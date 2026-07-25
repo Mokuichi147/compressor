@@ -2,7 +2,7 @@ use image::DynamicImage;
 use mozjpeg::{Compress, Marker};
 use std::path::Path;
 use crate::error::CompressError;
-use crate::utilities::{get_aspect_ratio, write_smaller};
+use crate::utilities::{copy_modified_time, get_aspect_ratio, write_smaller};
 
 pub fn path2compress(path: &Path, output_path: &Path, quality: f32) -> Result<(), CompressError> {
     // 元データはメタデータの引き継ぎとサイズ比較の両方で使う
@@ -11,7 +11,8 @@ pub fn path2compress(path: &Path, output_path: &Path, quality: f32) -> Result<()
     // 軽量画像の作成
     let jpeg_data = compress(&original, quality)?;
 
-    write_smaller(output_path, &jpeg_data, &original)
+    write_smaller(output_path, &jpeg_data, &original)?;
+    copy_modified_time(path, output_path)
 }
 
 #[allow(dead_code)]
