@@ -4,12 +4,13 @@ use std::path::Path;
 use std::time::Instant;
 use crate::error::CompressError;
 use crate::stats::CompressionStats;
-use crate::utilities::{copy_modified_time, get_aspect_ratio, write_smaller};
+use crate::utilities::{copy_modified_time, get_aspect_ratio, resize_to_fit, write_smaller};
 
 pub fn path2compress(
     path: &Path,
     output_path: &Path,
     quality: f32,
+    max_long_side: Option<u32>,
 ) -> Result<CompressionStats, CompressError> {
     let start = Instant::now();
 
@@ -17,9 +18,14 @@ pub fn path2compress(
     let original = std::fs::read(path)?;
 
     // 軽量画像の作成
-    let jpeg_data = compress(&original, quality)?;
+    let (jpeg_data, resized) = compress(&original, quality, max_long_side)?;
 
-    write_smaller(output_path, &jpeg_data, &original)?;
+    // 縮小した場合は元と別の画像になるため、「元より大きければ元を出す」保護は使えない
+    if resized {
+        std::fs::write(output_path, &jpeg_data)?;
+    } else {
+        write_smaller(output_path, &jpeg_data, &original)?;
+    }
     copy_modified_time(path, output_path)?;
 
     CompressionStats::measure(path, output_path, start)
@@ -28,7 +34,7 @@ pub fn path2compress(
 #[allow(dead_code)]
 pub fn data2compress(data: &[u8], output_path: &Path, quality: f32) -> Result<(), CompressError> {
     // 軽量画像の作成
-    let jpeg_data = compress(data, quality)?;
+    let (jpeg_data, _) = compress(data, quality, None)?;
 
     write_smaller(output_path, &jpeg_data, data)
 }
@@ -100,9 +106,19 @@ fn extract_metadata_markers(jpeg: &[u8]) -> Vec<(u8, Vec<u8>)> {
     markers
 }
 
-fn compress(original: &[u8], quality: f32) -> Result<Vec<u8>, CompressError> {
+/// JPEGに再圧縮する。縮小したかどうかも返す（縮小時はサイズ比較による保護が使えないため）。
+fn compress(
+    original: &[u8],
+    quality: f32,
+    max_long_side: Option<u32>,
+) -> Result<(Vec<u8>, bool), CompressError> {
     // 画像を読み込む
     let img: DynamicImage = image::load_from_memory(original)?;
+
+    let (original_width, original_height) = (img.width(), img.height());
+    let img = resize_to_fit(img, max_long_side);
+    let resized = img.width() != original_width || img.height() != original_height;
+
     let rgb_img = img.to_rgb8();
 
     // 画像の幅と高さを取得
@@ -117,14 +133,16 @@ fn compress(original: &[u8], quality: f32) -> Result<Vec<u8>, CompressError> {
 
     let mut comp = comp.start_compress(Vec::new())?;
 
-    // メタデータはスキャンラインより先に書く必要がある
+    // メタデータはスキャンラインより先に書く必要がある。
+    // 縮小した場合、Exif が記録している元の画素数とはずれるが、
+    // 撮影日時・GPS・Orientation は引き続き正しく機能する。
     for (app_number, data) in extract_metadata_markers(original) {
         comp.write_marker(Marker::APP(app_number), &data);
     }
 
     comp.write_scanlines(&pixels)?;
 
-    Ok(comp.finish()?)
+    Ok((comp.finish()?, resized))
 }
 
 #[cfg(test)]

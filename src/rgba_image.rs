@@ -6,9 +6,21 @@ use std::path::Path;
 use std::time::Instant;
 use crate::error::CompressError;
 use crate::stats::CompressionStats;
-use crate::utilities::{copy_modified_time, get_aspect_ratio, write_smaller};
+use crate::utilities::{
+    copy_modified_time, get_aspect_ratio, resize_to_fit, scaled_size, write_smaller,
+};
 
-pub fn path2compress(path: &Path, output_path: &Path) -> Result<CompressionStats, CompressError> {
+pub fn path2compress(
+    path: &Path,
+    output_path: &Path,
+    max_long_side: Option<u32>,
+) -> Result<CompressionStats, CompressError> {
+    // 縮小が必要な場合だけデコードし直す。
+    // 通常は PNG のバイト列をそのまま oxipng に渡すほうが速く、元との比較もできる。
+    if needs_resize(path, max_long_side) {
+        return decode2compress_png(path, output_path, max_long_side);
+    }
+
     let start = Instant::now();
 
     // 元データはサイズ比較に使う
@@ -33,10 +45,11 @@ pub fn path2compress(path: &Path, output_path: &Path) -> Result<CompressionStats
 pub fn decode2compress_png(
     path: &Path,
     output_path: &Path,
+    max_long_side: Option<u32>,
 ) -> Result<CompressionStats, CompressError> {
     let start = Instant::now();
 
-    let img = image::open(path)?;
+    let img = resize_to_fit(image::open(path)?, max_long_side);
 
     // oxipng は PNG バイト列を入力に取るため、一度 PNG にエンコードしてから最適化する。
     let mut png_buf = Vec::new();
@@ -54,6 +67,19 @@ pub fn decode2compress_png(
     copy_modified_time(path, output_path)?;
 
     CompressionStats::measure(path, output_path, start)
+}
+
+/// 縮小が必要かどうかを、画像全体をデコードせずヘッダだけで判定する。
+fn needs_resize(path: &Path, max_long_side: Option<u32>) -> bool {
+    let Some(max) = max_long_side else {
+        return false;
+    };
+
+    match image::image_dimensions(path) {
+        Ok((width, height)) => scaled_size(width, height, max).is_some(),
+        // 読めない場合は通常の経路に任せ、そこでエラーを返させる
+        Err(_) => false,
+    }
 }
 
 #[allow(dead_code)]
