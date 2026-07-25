@@ -1,9 +1,11 @@
 use std::{
     collections::HashSet,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     process::ExitCode,
     time::Instant,
 };
+use task::Concurrency;
 use clap::Parser;
 mod file;
 mod scan;
@@ -16,6 +18,7 @@ mod gif_image;
 mod video;
 mod audio;
 mod job;
+mod task;
 mod stats;
 
 #[derive(Parser)]
@@ -72,6 +75,14 @@ struct AppArgs {
     /// 実際には圧縮せず、どのファイルをどこにどの形式で出力するかだけを表示する
     #[clap(long)]
     dry_run: bool,
+
+    /// 画像を並列に圧縮する数（既定: CPUのコア数）
+    #[clap(long)]
+    jobs: Option<NonZeroUsize>,
+
+    /// 動画・音声を同時に処理する数。ffmpeg自体がスレッドを使うため既定は控えめ
+    #[clap(long, default_value = "2")]
+    ffmpeg_jobs: NonZeroUsize,
 }
 
 /// 失敗したファイルを集めておき、実行の最後にまとめて報告する。
@@ -88,6 +99,12 @@ impl Failures {
         let message = format!("{:?}: {error}", path);
         eprintln!("圧縮に失敗しました: {message}");
         self.messages.push(message);
+    }
+
+    /// 既に表示済みの失敗を、集計にだけ加える。
+    /// 並列実行では実行時に1行で表示しているため、ここで再度出さない。
+    fn add_reported(&mut self, path: &Path, error: impl std::fmt::Display) {
+        self.messages.push(format!("{:?}: {error}", path));
     }
 
     /// 失敗の一覧を表示する。1件でもあれば true を返す（終了コードに使う）。
@@ -161,6 +178,10 @@ fn main() -> ExitCode {
     // 拡張子だけ違う同名ファイルは出力先が衝突しうる。
     let mut used_outputs: HashSet<PathBuf> = HashSet::new();
 
+    // 実行内容が決まったジョブを溜めてから並列に流す。
+    // 出力先の割り当ては逐次のまま行うため、衝突時にどちらが元の名前を取るかは変わらない。
+    let mut jobs: Vec<job::Job> = Vec::new();
+
     for input_file in input_files.iter() {
         // -i で明示的に渡されたファイルにも除外指定を効かせる
         if excludes.is_excluded(input_file) {
@@ -205,12 +226,13 @@ fn main() -> ExitCode {
             continue;
         }
 
-        println!("{}: {:?} -> {:?}", job.action.label(), job.source, job.target);
         if args.dry_run {
+            println!("{}: {:?} -> {:?}", job.action.label(), job.source, job.target);
             continue;
         }
 
-        // 入力がサブディレクトリ配下の場合、出力先の親ディレクトリを作成する
+        // 入力がサブディレクトリ配下の場合、出力先の親ディレクトリを作成する。
+        // 並列実行の前に済ませて、同じディレクトリを複数スレッドで作りにいかないようにする。
         if let Some(parent) = job.target.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
                 failures.record(&job.target, e);
@@ -218,12 +240,17 @@ fn main() -> ExitCode {
             }
         }
 
-        match job.run() {
-            Ok(stats) => {
-                println!("  {}", stats.summary_line());
-                totals.add(&stats);
-            }
-            Err(e) => failures.record(&job.source, e),
+        jobs.push(job);
+    }
+
+    let concurrency = Concurrency {
+        image_jobs: args.jobs.unwrap_or_else(Concurrency::default_image_jobs),
+        ffmpeg_jobs: args.ffmpeg_jobs,
+    };
+    for outcome in task::run_all(jobs, &concurrency) {
+        match outcome.result {
+            Ok(stats) => totals.add(&stats),
+            Err(e) => failures.add_reported(&outcome.source, e),
         }
     }
 
