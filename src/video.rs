@@ -3,7 +3,13 @@ use std::process::Command;
 use std::fs;
 use std::time::Instant;
 use crate::error::CompressError;
-use crate::utilities::{get_aspect_ratio, is_ffmpeg_available};
+use crate::utilities::{
+    capped_bitrate, get_aspect_ratio, is_ffmpeg_available, probe_audio_stream,
+    replace_with_original_if_larger, same_extension,
+};
+
+/// 動画に載せる音声の目標ビットレート。元がこれ以下ならそのままコピーする。
+const AUDIO_BITRATE: &str = "128k";
 
 /// 動画圧縮の結果統計情報
 #[allow(dead_code)]
@@ -177,7 +183,26 @@ pub fn compress_video(
 
     // 幅広い再生互換のため 8bit 4:2:0 に固定
     command.args(&["-pix_fmt", "yuv420p"]);
-    command.args(&["-c:a", "aac", "-b:a", "128k"]);
+
+    // 音声トラックの扱いを決める。
+    // 元が既に AAC で目標ビットレート以下なら、再エンコードせずコピーして世代劣化を避ける。
+    // それ以外は AAC に再エンコードするが、元より高いビットレートは指定しない。
+    let audio_info = probe_audio_stream(Path::new(input_path));
+    match &audio_info {
+        Some(info)
+            if info.codec_name == "aac"
+                && info.bitrate_bps.is_some_and(|bps| bps <= 128_000) =>
+        {
+            command.args(&["-c:a", "copy"]);
+        }
+        Some(info) => {
+            let bitrate = capped_bitrate(AUDIO_BITRATE, info.bitrate_bps);
+            command.args(&["-c:a", "aac", "-b:a", &bitrate]);
+        }
+        None => {
+            command.args(&["-c:a", "aac", "-b:a", AUDIO_BITRATE]);
+        }
+    }
 
     // リサイズフィルターを追加（必要な場合）
     if !resize_filter.is_empty() {
@@ -188,12 +213,18 @@ pub fn compress_video(
     let status = command
         .args(&["-movflags", "+faststart"]) // ストリーミング向けに moov を先頭へ
         .arg("-y") // 確認なしで上書き
-        .arg(output_file_path)
+        .arg(&output_file_path)
         .status()
         .map_err(|e| CompressError::Ffmpeg(format!("FFmpegの実行に失敗: {e}")))?;
 
     if !status.success() {
         return Err(CompressError::Ffmpeg(format!("FFmpegがエラーコードで終了: {status}")));
+    }
+
+    // 既に十分圧縮された動画を再エンコードすると、サイズが増えたうえに画質だけ落ちることがある。
+    // 形式が変わらない場合（mp4→mp4）に限り、元のほうが小さければ元を出力する。
+    if same_extension(Path::new(input_path), &output_file_path) {
+        replace_with_original_if_larger(Path::new(input_path), &output_file_path)?;
     }
 
     // 圧縮後のファイルサイズを取得
