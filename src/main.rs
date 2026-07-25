@@ -14,6 +14,7 @@ mod error;
 mod rgb_image;
 mod rgba_image;
 mod webp_image;
+mod avif_image;
 mod gif_image;
 mod video;
 mod audio;
@@ -42,6 +43,10 @@ struct AppArgs {
     /// 画像をWebPで出力する（jpg/jpeg→非可逆, png→可逆）
     #[clap(short, long)]
     webp: bool,
+
+    /// 画像をAVIFで出力する（非可逆。pngもアルファを保った非可逆になる）。--webp とは併用できない
+    #[clap(long, conflicts_with = "webp")]
+    avif: bool,
 
     /// 動画をHEVC(H.265)で出力する（既定はAV1。HEVCは旧来デバイスでの再生互換性が高い）
     #[clap(long)]
@@ -128,6 +133,7 @@ impl AppArgs {
         job::Settings {
             quality: self.quality,
             webp: self.webp,
+            avif: self.avif,
             hevc: self.hevc,
             crf: self.crf,
             opus: self.opus,

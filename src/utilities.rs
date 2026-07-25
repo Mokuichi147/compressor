@@ -1,5 +1,5 @@
 use image::imageops::FilterType;
-use image::DynamicImage;
+use image::{DynamicImage, ImageDecoder};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -244,6 +244,21 @@ pub fn resize_to_fit(image: DynamicImage, max_long_side: Option<u32>) -> Dynamic
     }
 
     image.resize(max, max, FilterType::Lanczos3)
+}
+
+/// 画像を読み込み、Exif の Orientation をピクセルに反映して返す。
+///
+/// WebP・AVIF には Exif をそのまま引き継がないため、向きの情報をピクセル側に焼き込む。
+/// これをしないと、縦向きに撮影した写真が横倒しで出力される。
+pub fn open_with_orientation(path: &Path) -> Result<DynamicImage, CompressError> {
+    let mut decoder = image::ImageReader::open(path)?
+        .with_guessed_format()?
+        .into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut img = DynamicImage::from_decoder(decoder)?;
+    img.apply_orientation(orientation);
+
+    Ok(img)
 }
 
 #[cfg(test)]
