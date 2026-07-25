@@ -4,6 +4,7 @@ pub mod stats;
 pub mod rgb_image;
 pub mod rgba_image;
 pub mod webp_image;
+pub mod avif_image;
 pub mod gif_image;
 pub mod video;
 pub mod audio;

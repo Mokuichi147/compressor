@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::audio::{self, AudioCodec};
+use crate::avif_image;
 use crate::error::CompressError;
 use crate::stats::CompressionStats;
 use crate::file;
@@ -15,6 +16,7 @@ use crate::webp_image;
 pub struct Settings {
     pub quality: f32,
     pub webp: bool,
+    pub avif: bool,
     pub hevc: bool,
     pub crf: Option<u8>,
     pub opus: bool,
@@ -64,6 +66,10 @@ pub enum Action {
     WebpLossy { quality: f32, max_long_side: Option<u32> },
     /// 可逆WebPに変換する
     WebpLossless { max_long_side: Option<u32> },
+    /// 非可逆AVIFに変換する（jpg/jpeg 向け）
+    AvifLossy { quality: f32, max_long_side: Option<u32> },
+    /// アルファを保った非可逆AVIFに変換する（png 向け）。AVIFは可逆にできない
+    AvifLossyRgba { quality: f32, max_long_side: Option<u32> },
     /// GIF・TIFF・BMP をデコードし直してPNG化する
     DecodeToPng { max_long_side: Option<u32> },
     Video { codec: VideoCodec, crf: Option<u8>, max_long_side: u32 },
@@ -77,6 +83,7 @@ impl Action {
             Action::RgbImage { .. } => "jpg",
             Action::RgbaImage { .. } | Action::DecodeToPng { .. } => "png",
             Action::WebpLossy { .. } | Action::WebpLossless { .. } => "webp",
+            Action::AvifLossy { .. } | Action::AvifLossyRgba { .. } => "avif",
             Action::Video { .. } => "mp4",
             Action::Audio { codec, .. } => codec.extension(),
         }
@@ -95,6 +102,8 @@ impl Action {
             Action::RgbaImage { .. } => "rgba image".to_string(),
             Action::WebpLossy { .. } => "webp (lossy)".to_string(),
             Action::WebpLossless { .. } => "webp (lossless)".to_string(),
+            Action::AvifLossy { .. } => "avif (lossy)".to_string(),
+            Action::AvifLossyRgba { .. } => "avif (lossy, alpha)".to_string(),
             Action::DecodeToPng { .. } => "image -> png".to_string(),
             Action::Video { codec, .. } => format!("video ({})", codec.name()),
             Action::Audio { codec, .. } => format!("audio ({})", codec.extension()),
@@ -126,6 +135,20 @@ impl Job {
             ),
             Action::WebpLossless { max_long_side } => {
                 webp_image::path2compress_lossless(&self.source, &self.target, *max_long_side)
+            }
+            Action::AvifLossy { quality, max_long_side } => avif_image::path2compress_lossy(
+                &self.source,
+                &self.target,
+                *quality,
+                *max_long_side,
+            ),
+            Action::AvifLossyRgba { quality, max_long_side } => {
+                avif_image::path2compress_lossy_rgba(
+                    &self.source,
+                    &self.target,
+                    *quality,
+                    *max_long_side,
+                )
             }
             Action::DecodeToPng { max_long_side } => {
                 rgba_image::decode2compress_png(&self.source, &self.target, *max_long_side)
@@ -175,14 +198,24 @@ fn decide_action(source: &Path, settings: &Settings) -> Result<Option<Action>, C
 
     let action = match ext.as_str() {
         "png" => {
-            if settings.webp {
+            if settings.avif {
+                Action::AvifLossyRgba {
+                    quality: settings.quality,
+                    max_long_side: settings.max_long_side,
+                }
+            } else if settings.webp {
                 Action::WebpLossless { max_long_side: settings.max_long_side }
             } else {
                 Action::RgbaImage { max_long_side: settings.max_long_side }
             }
         }
         "jpg" | "jpeg" => {
-            if settings.webp {
+            if settings.avif {
+                Action::AvifLossy {
+                    quality: settings.quality,
+                    max_long_side: settings.max_long_side,
+                }
+            } else if settings.webp {
                 Action::WebpLossy {
                     quality: settings.quality,
                     max_long_side: settings.max_long_side,
@@ -202,6 +235,11 @@ fn decide_action(source: &Path, settings: &Settings) -> Result<Option<Action>, C
                     crf: settings.crf,
                     max_long_side: settings.video_max_long_side(),
                 }
+            } else if settings.avif {
+                Action::AvifLossyRgba {
+                    quality: settings.quality,
+                    max_long_side: settings.max_long_side,
+                }
             } else if settings.webp {
                 Action::WebpLossless { max_long_side: settings.max_long_side }
             } else {
@@ -210,7 +248,12 @@ fn decide_action(source: &Path, settings: &Settings) -> Result<Option<Action>, C
         }
         // 可逆だが圧縮が弱い（もしくは無圧縮の）画像。GIFと同様にPNG化する
         "tiff" | "tif" | "bmp" => {
-            if settings.webp {
+            if settings.avif {
+                Action::AvifLossyRgba {
+                    quality: settings.quality,
+                    max_long_side: settings.max_long_side,
+                }
+            } else if settings.webp {
                 Action::WebpLossless { max_long_side: settings.max_long_side }
             } else {
                 Action::DecodeToPng { max_long_side: settings.max_long_side }
@@ -247,6 +290,7 @@ mod tests {
         Settings {
             quality: 70.0,
             webp: false,
+            avif: false,
             hevc: false,
             crf: None,
             opus: false,

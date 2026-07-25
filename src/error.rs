@@ -11,6 +11,8 @@ pub enum CompressError {
     Png(oxipng::PngError),
     /// ffmpegの実行に失敗した（未インストール、エンコードエラーなど）。
     Ffmpeg(String),
+    /// ravifによるAVIFエンコードに失敗した。
+    Avif(String),
 }
 
 impl fmt::Display for CompressError {
@@ -20,6 +22,7 @@ impl fmt::Display for CompressError {
             CompressError::Io(e) => write!(f, "io error: {e}"),
             CompressError::Png(e) => write!(f, "png optimize error: {e}"),
             CompressError::Ffmpeg(e) => write!(f, "ffmpeg error: {e}"),
+            CompressError::Avif(e) => write!(f, "avif encode error: {e}"),
         }
     }
 }
@@ -31,6 +34,7 @@ impl std::error::Error for CompressError {
             CompressError::Io(e) => Some(e),
             CompressError::Png(e) => Some(e),
             CompressError::Ffmpeg(_) => None,
+            CompressError::Avif(_) => None,
         }
     }
 }

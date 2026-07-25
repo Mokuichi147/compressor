@@ -1,4 +1,3 @@
-use image::{DynamicImage, ImageDecoder};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
@@ -6,22 +5,7 @@ use std::time::Instant;
 use webp::Encoder;
 use crate::error::CompressError;
 use crate::stats::CompressionStats;
-use crate::utilities::{copy_modified_time, resize_to_fit};
-
-/// 画像を読み込み、Exif の Orientation をピクセルに反映して返す。
-///
-/// WebP には Exif をそのまま引き継げないため、向きの情報をピクセル側に焼き込む。
-/// これをしないと、縦向きに撮影した写真が横倒しで出力される。
-fn open_with_orientation(path: &Path) -> Result<DynamicImage, CompressError> {
-    let mut decoder = image::ImageReader::open(path)?
-        .with_guessed_format()?
-        .into_decoder()?;
-    let orientation = decoder.orientation()?;
-    let mut img = DynamicImage::from_decoder(decoder)?;
-    img.apply_orientation(orientation);
-
-    Ok(img)
-}
+use crate::utilities::{copy_modified_time, open_with_orientation, resize_to_fit};
 
 /// jpg/jpeg 向け: 非可逆 WebP に圧縮する（quality は 0-100）。
 pub fn path2compress_lossy(
