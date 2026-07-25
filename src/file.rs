@@ -1,25 +1,33 @@
-use std::{collections::HashSet, fs, path::{Component, PathBuf}};
+use std::{collections::HashSet, fs, path::{Component, Path, PathBuf}};
+
+use crate::scan::Excludes;
 
 /// 指定されたディレクトリ内のファイルを再帰的に取得する。
 /// 出力先が衝突した際にどちらが元の名前を取るかを実行ごとに変えないため、パス順にソートして返す。
-pub fn get_files(dir: &str) -> Vec<PathBuf> {
+///
+/// 除外対象のディレクトリには降りない。`.git` や `target` の中を無駄に歩かないため。
+pub fn get_files(dir: &str, excludes: &Excludes) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = Vec::new();
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let path: std::path::PathBuf = entry.path();
-                if path.is_file() {
-                    files.push(path);
-                } else if path.is_dir() {
-                    for filepath in get_files(path.to_str().unwrap()) {
-                        files.push(filepath);
-                    }
-                }
-            }
-        }
-    }
+    collect_files(Path::new(dir), excludes, &mut files);
     files.sort();
     files
+}
+
+fn collect_files(dir: &Path, excludes: &Excludes, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            if !excludes.is_excluded(&path) {
+                files.push(path);
+            }
+        } else if path.is_dir() && excludes.should_enter(&path) {
+            collect_files(&path, excludes, files);
+        }
+    }
 }
 
 /// 絶対パスを取得する。
@@ -72,6 +80,10 @@ pub fn unique_target(base: &PathBuf, ext: &str, used: &mut HashSet<PathBuf>) -> 
 mod tests {
     use super::*;
 
+    fn no_excludes() -> Excludes {
+        Excludes::new(&[], false).unwrap()
+    }
+
     /// 走査結果が順序不定だと、衝突時にどちらが元の名前を取るか実行ごとに変わってしまう
     #[test]
     fn get_files_returns_sorted_paths() {
@@ -83,11 +95,34 @@ mod tests {
         }
         fs::write(dir.join("sub").join("b.png"), b"x").unwrap();
 
-        let files = get_files(dir.to_str().unwrap());
+        let files = get_files(dir.to_str().unwrap(), &no_excludes());
         let mut sorted = files.clone();
         sorted.sort();
         assert_eq!(files, sorted, "get_files がソートされていない");
         assert_eq!(files.len(), 4);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 隠しディレクトリと除外指定されたディレクトリには降りないこと
+    #[test]
+    fn get_files_skips_excluded_directories() {
+        let dir = std::env::temp_dir().join("compressor_get_files_excludes");
+        let _ = fs::remove_dir_all(&dir);
+        for sub in ["src", ".git", "target"] {
+            fs::create_dir_all(dir.join(sub)).unwrap();
+            fs::write(dir.join(sub).join("a.png"), b"x").unwrap();
+        }
+        fs::write(dir.join("top.png"), b"x").unwrap();
+
+        let excludes = Excludes::new(&["target".to_string()], false).unwrap();
+        let files = get_files(dir.to_str().unwrap(), &excludes);
+
+        let names: Vec<String> = files
+            .iter()
+            .map(|path| path.strip_prefix(&dir).unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["src/a.png", "top.png"], "{names:?}");
 
         let _ = fs::remove_dir_all(&dir);
     }

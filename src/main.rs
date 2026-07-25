@@ -6,6 +6,7 @@ use std::{
 };
 use clap::Parser;
 mod file;
+mod scan;
 mod utilities;
 mod error;
 mod rgb_image;
@@ -54,6 +55,14 @@ struct AppArgs {
     /// 音声の非可逆圧縮時のビットレート
     #[clap(long, default_value = "128k")]
     audio_bitrate: String,
+
+    /// 走査から除外するグロブ（複数指定可）。ディレクトリ名だけの指定でその配下ごと除外できる
+    #[clap(long, num_args = 1..)]
+    exclude: Vec<String>,
+
+    /// 隠しディレクトリ・ファイル（`.` 始まり）も対象にする
+    #[clap(long)]
+    include_hidden: bool,
 
     /// 長辺の上限（ピクセル）。超える画像・動画を縮小する。0 で縮小しない。
     /// 未指定の場合、動画のみ 1920 に収める（画像は縮小しない）
@@ -119,13 +128,25 @@ fn main() -> ExitCode {
     let settings = args.settings();
     let mut failures = Failures::default();
 
+    let excludes = match scan::Excludes::new(&args.exclude, args.include_hidden) {
+        Ok(excludes) => excludes,
+        Err(e) => {
+            eprintln!("--exclude の指定が不正です: {e}");
+            std::process::exit(2);
+        }
+    };
+
     let mut input_files = args.input_file.clone().unwrap_or_default();
     if input_files.is_empty() {
-        input_files = file::get_files(".");
+        input_files = file::get_files(".", &excludes);
     }
 
     std::fs::create_dir_all(&args.output_dir).unwrap();
     let root_dir = PathBuf::from(".");
+
+    // 出力先そのものを入力にしないための基準。
+    // 文字列の部分一致で判定すると、-o に絶対パスや末尾スラッシュ付きを渡したときに機能しない。
+    let output_root = std::fs::canonicalize(&args.output_dir).ok();
 
     // ffmpeg が無いと動画・音声は1件ずつ同じ理由で失敗する。
     // ファイルごとに同じメッセージを並べても読みにくいので、最初に1回だけ報告して以降はスキップする。
@@ -141,11 +162,8 @@ fn main() -> ExitCode {
     let mut used_outputs: HashSet<PathBuf> = HashSet::new();
 
     for input_file in input_files.iter() {
-        // 圧縮済みのファイルはスキップする
-        if input_file
-            .to_string_lossy()
-            .contains(format!("/{}/", &args.output_dir).as_str())
-        {
+        // -i で明示的に渡されたファイルにも除外指定を効かせる
+        if excludes.is_excluded(input_file) {
             continue;
         }
 
@@ -156,6 +174,11 @@ fn main() -> ExitCode {
                 continue;
             }
         };
+
+        // 圧縮済みのファイルはスキップする
+        if output_root.as_ref().is_some_and(|root| source.starts_with(root)) {
+            continue;
+        }
 
         let relative_path = file::get_relative_path(&root_dir, input_file);
         let output_base = PathBuf::from(&args.output_dir).join(relative_path);
