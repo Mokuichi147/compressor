@@ -189,6 +189,20 @@ pub fn replace_with_original_if_larger(
     Ok(true)
 }
 
+/// 出力ファイルの更新日時を元ファイルに合わせる。
+///
+/// メタデータを持てない形式でも「撮影した順に並べる」用途を保てるようにするため、
+/// すべての圧縮処理の最後に呼ぶ。
+pub fn copy_modified_time(input_path: &Path, output_path: &Path) -> Result<(), CompressError> {
+    let modified = std::fs::metadata(input_path)?.modified()?;
+
+    // 更新日時の変更には書き込み用に開いたハンドルが必要
+    let file = File::options().write(true).open(output_path)?;
+    file.set_modified(modified)?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +286,49 @@ mod tests {
 
         assert!(!replace_with_original_if_larger(&input, &output).unwrap());
         assert_eq!(std::fs::read(&output).unwrap(), vec![b'b'; 100]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 出力の更新日時が元ファイルに揃うこと
+    #[test]
+    fn copies_modified_time_from_input() {
+        let dir = std::env::temp_dir().join("compressor_mtime");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let input = dir.join("in.jpg");
+        let output = dir.join("out.jpg");
+        std::fs::write(&input, b"original").unwrap();
+        std::fs::write(&output, b"compressed").unwrap();
+
+        // 元ファイルの更新日時を過去にずらしてから引き継げているかを見る
+        let past = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+        File::options()
+            .write(true)
+            .open(&input)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+
+        copy_modified_time(&input, &output).unwrap();
+
+        assert_eq!(std::fs::metadata(&output).unwrap().modified().unwrap(), past);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 元ファイルが無い場合はErrを返し、panicしないこと
+    #[test]
+    fn missing_input_yields_error() {
+        let dir = std::env::temp_dir().join("compressor_mtime_missing");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let output = dir.join("out.jpg");
+        std::fs::write(&output, b"compressed").unwrap();
+
+        assert!(copy_modified_time(&dir.join("missing.jpg"), &output).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

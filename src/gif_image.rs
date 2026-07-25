@@ -5,6 +5,7 @@ use image::codecs::gif::GifDecoder;
 use image::{AnimationDecoder, ImageFormat};
 use oxipng::{optimize_from_memory, Options};
 use crate::error::CompressError;
+use crate::utilities::copy_modified_time;
 
 /// アニメーションGIF（2フレーム以上）かどうかを判定する。
 /// 先頭2フレームのみを遅延デコードして数えるため、巨大なGIFでも軽い。
@@ -30,6 +31,7 @@ pub fn path2compress_png(path: &Path, output_path: &Path) -> Result<(), Compress
     let file = File::create(output_path)?;
     let mut writer = BufWriter::new(file);
     std::io::copy(&mut &png_data[..], &mut writer)?;
+    drop(writer);
 
-    Ok(())
+    copy_modified_time(path, output_path)
 }

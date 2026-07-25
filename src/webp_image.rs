@@ -4,6 +4,7 @@ use std::io::BufWriter;
 use std::path::Path;
 use webp::Encoder;
 use crate::error::CompressError;
+use crate::utilities::copy_modified_time;
 
 /// 画像を読み込み、Exif の Orientation をピクセルに反映して返す。
 ///
@@ -28,7 +29,8 @@ pub fn path2compress_lossy(path: &Path, output_path: &Path, quality: f32) -> Res
     let encoder = Encoder::from_rgb(rgb.as_raw(), rgb.width(), rgb.height());
     let data = encoder.encode(quality);
 
-    write_file(output_path, &data)
+    write_file(output_path, &data)?;
+    copy_modified_time(path, output_path)
 }
 
 /// png 向け: 可逆 WebP に圧縮する（アルファ保持）。
@@ -39,7 +41,8 @@ pub fn path2compress_lossless(path: &Path, output_path: &Path) -> Result<(), Com
     let encoder = Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height());
     let data = encoder.encode_lossless();
 
-    write_file(output_path, &data)
+    write_file(output_path, &data)?;
+    copy_modified_time(path, output_path)
 }
 
 fn write_file(output_path: &Path, data: &[u8]) -> Result<(), CompressError> {
