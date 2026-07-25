@@ -70,6 +70,8 @@ pub enum Action {
     AvifLossy { quality: f32, max_long_side: Option<u32> },
     /// アルファを保った非可逆AVIFに変換する（png 向け）。AVIFは可逆にできない
     AvifLossyRgba { quality: f32, max_long_side: Option<u32> },
+    /// アニメーションGIFを可逆のアニメーションWebPに変換する（透過とループを保つ）
+    AnimatedWebp { max_long_side: Option<u32> },
     /// GIF・TIFF・BMP をデコードし直してPNG化する
     DecodeToPng { max_long_side: Option<u32> },
     Video { codec: VideoCodec, crf: Option<u8>, max_long_side: u32 },
@@ -82,7 +84,9 @@ impl Action {
         match self {
             Action::RgbImage { .. } => "jpg",
             Action::RgbaImage { .. } | Action::DecodeToPng { .. } => "png",
-            Action::WebpLossy { .. } | Action::WebpLossless { .. } => "webp",
+            Action::WebpLossy { .. }
+            | Action::WebpLossless { .. }
+            | Action::AnimatedWebp { .. } => "webp",
             Action::AvifLossy { .. } | Action::AvifLossyRgba { .. } => "avif",
             Action::Video { .. } => "mp4",
             Action::Audio { codec, .. } => codec.extension(),
@@ -102,6 +106,7 @@ impl Action {
             Action::RgbaImage { .. } => "rgba image".to_string(),
             Action::WebpLossy { .. } => "webp (lossy)".to_string(),
             Action::WebpLossless { .. } => "webp (lossless)".to_string(),
+            Action::AnimatedWebp { .. } => "webp (animated)".to_string(),
             Action::AvifLossy { .. } => "avif (lossy)".to_string(),
             Action::AvifLossyRgba { .. } => "avif (lossy, alpha)".to_string(),
             Action::DecodeToPng { .. } => "image -> png".to_string(),
@@ -149,6 +154,9 @@ impl Job {
                     *quality,
                     *max_long_side,
                 )
+            }
+            Action::AnimatedWebp { max_long_side } => {
+                gif_image::path2compress_animated_webp(&self.source, &self.target, *max_long_side)
             }
             Action::DecodeToPng { max_long_side } => {
                 rgba_image::decode2compress_png(&self.source, &self.target, *max_long_side)
@@ -229,7 +237,11 @@ fn decide_action(source: &Path, settings: &Settings) -> Result<Option<Action>, C
         }
         // GIFは内容で振り分ける。アニメーションGIFは動画として扱うため `--webp` の対象外。
         "gif" => {
-            if gif_image::is_animated(source)? {
+            let animated = gif_image::is_animated(source)?;
+            if animated && settings.webp {
+                // 透過とループを保てるアニメーションWebPにする
+                Action::AnimatedWebp { max_long_side: settings.max_long_side }
+            } else if animated {
                 Action::Video {
                     codec: settings.video_codec(),
                     crf: settings.crf,

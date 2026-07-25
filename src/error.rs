@@ -13,6 +13,8 @@ pub enum CompressError {
     Ffmpeg(String),
     /// ravifによるAVIFエンコードに失敗した。
     Avif(String),
+    /// WebPのエンコードに失敗した。
+    Webp(String),
 }
 
 impl fmt::Display for CompressError {
@@ -23,6 +25,7 @@ impl fmt::Display for CompressError {
             CompressError::Png(e) => write!(f, "png optimize error: {e}"),
             CompressError::Ffmpeg(e) => write!(f, "ffmpeg error: {e}"),
             CompressError::Avif(e) => write!(f, "avif encode error: {e}"),
+            CompressError::Webp(e) => write!(f, "webp encode error: {e}"),
         }
     }
 }
@@ -35,6 +38,7 @@ impl std::error::Error for CompressError {
             CompressError::Png(e) => Some(e),
             CompressError::Ffmpeg(_) => None,
             CompressError::Avif(_) => None,
+            CompressError::Webp(_) => None,
         }
     }
 }
